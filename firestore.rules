@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Paste this entire file into: Firebase Console → Firestore Database → Rules → Publish
+//
+// This app mixes:
+// - Staff / Admin / HOD: Firebase Auth (request.auth != null)
+// - Students: NO Firebase Auth — they query Students / Allocations / Settings and submit Feedbacks
+//
+// Tighten rules for production (e.g. limit Students reads, rate-limit Feedbacks creates).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /Departments/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /Schemes/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /Users/{userId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+    }
+
+    // Student login queries by rollNo without signing in to Firebase Auth
+    match /Students/{docId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    match /Subjects/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Student dashboard lists allocations by department (client-side filter)
+    match /Allocations/{docId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    // Anonymous student submissions
+    match /Feedbacks/{docId} {
+      allow read: if request.auth != null;
+      allow create: if true;
+      allow update, delete: if request.auth != null;
+    }
+
+    // Portal open/close + student read
+    match /Settings/{docId} {
+      allow read: if true;
+      allow create, update: if request.auth != null;
+    }
+  }
+}

@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    @apply text-slate-800 antialiased;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    @apply bg-blue-200/80 text-slate-900;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-blue-500/40 ring-offset-2 ring-offset-white;
+  }
+
+  /* Hide default browser password reveal (e.g. Edge) since we use our own */
+  input[type="password"]::-ms-reveal,
+  input[type="password"]::-ms-clear {
+    display: none;
+  }
+}
+
+@layer utilities {
+  .text-gradient-brand {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600;
+  }
+  /* Full-page login / gate screens — mesh + noise feel without heavy assets */
+  .login-page-root {
+    @apply relative min-h-screen overflow-hidden;
+    background:
+      radial-gradient(
+        ellipse 120% 80% at 50% -20%,
+        rgb(219 234 254 / 0.65),
+        transparent 55%
+      ),
+      radial-gradient(
+        ellipse 80% 60% at 100% 50%,
+        rgb(199 210 254 / 0.45),
+        transparent 50%
+      ),
+      radial-gradient(
+        ellipse 70% 50% at 0% 80%,
+        rgb(165 243 252 / 0.35),
+        transparent 45%
+      ),
+      linear-gradient(165deg, rgb(241 245 249) 0%, rgb(248 250 252) 45%, rgb(238 242 255) 100%);
+  }
+  .login-page-root::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+      rgb(148 163 184 / 0.15) 1px,
+      transparent 1px
+    );
+    background-size: 28px 28px;
+    mask-image: linear-gradient(to bottom, black 0%, black 40%, transparent 100%);
+    pointer-events: none;
+  }
+  .splash-bg {
+    background: linear-gradient(
+      135deg,
+      rgb(15 23 42) 0%,
+      rgb(30 58 138) 42%,
+      rgb(49 46 129) 100%
+    );
+  }
+  .bg-app-shell {
+    background-color: rgb(248 250 252);
+    background-image:
+      radial-gradient(
+        rgb(148 163 184 / 0.09) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        180deg,
+        rgb(255 255 255) 0%,
+        rgb(248 250 252) 40%,
+        rgb(241 245 249) 100%
+      );
+    background-size:
+      24px 24px,
+      100% 100%;
+    background-attachment: fixed;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-blob {
+    animation: blob 15s infinite;
+  }
+  .animate-text-shimmer {
+    background-size: 200% auto;
+    animation: textShimmer 4s linear infinite;
+  }
+  .animate-fade-in-up {
+    animation: fadeInUp 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-15px); }
+  100% { transform: translateY(0px); }
+}
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(40px, -60px) scale(1.1); }
+  66% { transform: translate(-30px, 30px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+@keyframes textShimmer {
+  to { background-position: 200% center; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer components {
+  .input-app {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15;
+  }
+  .select-app {
+    @apply w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white bg-no-repeat px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-800 shadow-sm transition-all duration-200 hover:border-blue-300 hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 active:scale-[0.98];
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-size: 1.25em 1.25em;
+  }
+  .input-app-admin {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-violet-600 focus:outline-none focus:ring-[3px] focus:ring-violet-500/15;
+  }
+  .select-app-admin {
+    @apply w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white bg-no-repeat px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-800 shadow-sm transition-all duration-200 hover:border-violet-300 hover:bg-slate-50 focus:border-violet-600 focus:bg-white focus:outline-none focus:ring-4 focus:ring-violet-500/20 active:scale-[0.98];
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-size: 1.25em 1.25em;
+  }
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .page-card-title {
+    @apply text-lg font-semibold tracking-tight text-slate-900;
+  }
+}
