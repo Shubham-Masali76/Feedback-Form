@@ -21,7 +21,8 @@ export default function CustomSelect({
 
     setDropdownStyle({
       position: "fixed",
-      width: rect.width + "px",
+      minWidth: rect.width + "px",
+      maxWidth: "90vw",
       left: rect.left + "px",
       top: isBottomClipped ? "auto" : rect.bottom + 8 + "px",
       bottom: isBottomClipped
@@ -187,7 +188,7 @@ function OptionItem({ option, selectedValue, onSelect, isDark }) {
         isSelected ? selectedClass : hoverClass
       }`}
     >
-      <span className="truncate whitespace-nowrap overflow-hidden mr-2">
+      <span className="whitespace-nowrap pr-2">
         {option.label}
       </span>
       {isSelected && (

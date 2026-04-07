@@ -18,6 +18,11 @@ import {
   Building2,
   ChevronDown,
   CheckCircle,
+  UserPlus,
+  Library,
+  Edit2,
+  Filter,
+  X,
 } from "lucide-react";
 import CustomSelect from "../components/UI/CustomSelect";
 import { Card } from "../components/UI";
@@ -33,6 +38,7 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import * as XLSX from "xlsx";
@@ -65,12 +71,19 @@ export default function HodDashboard({ user }) {
   // -- Form States --
   const [excelClass, setExcelClass] = useState("");
   const [excelDiv, setExcelDiv] = useState("A");
+
+  const [editingSubjectId, setEditingSubjectId] = useState(null);
+  const [editSubjectForm, setEditSubjectForm] = useState({
+    name: "",
+    code: "",
+    isElective: false,
+  });
   const [stdForm, setStdForm] = useState({
     name: "",
     roll: "",
     enroll: "",
     email: "",
-    div: "A",
+    div: "",
     tClass: "",
   });
   const [subForm, setSubForm] = useState({
@@ -83,7 +96,7 @@ export default function HodDashboard({ user }) {
     staff: "",
     subject: "",
     tClass: "",
-    division: "A",
+    division: "",
   });
 
   const [departmentsList, setDepartmentsList] = useState([]);
@@ -91,21 +104,35 @@ export default function HodDashboard({ user }) {
   const [allStaffList, setAllStaffList] = useState([]);
   const [allSubjectList, setAllSubjectList] = useState([]);
   const [schemeMappings, setSchemeMappings] = useState({
-    year1: "K-Scheme",
-    year2: "K-Scheme",
-    year3: "K-Scheme",
+    year1: "",
+    year2: "",
+    year3: "",
   });
 
   // -- Monitor & Report States (NEW) --
-  const [monitorDept, setMonitorDept] = useState("All");
+  const [monitorDept, setMonitorDept] = useState("");
   const [monitorStaff, setMonitorStaff] = useState("");
   const [monitorDivision, setMonitorDivision] = useState("");
   const [reportDept, setReportDept] = useState(user.dept || "");
   const [reportStaff, setReportStaff] = useState("");
   const [reportSubject, setReportSubject] = useState("");
-  const [acadYear, setAcadYear] = useState("2024-25");
-  const [semester, setSemester] = useState("VI");
+  const [acadYear, setAcadYear] = useState("");
+  const [semester, setSemester] = useState("");
   const [dynamicClassOptions, setDynamicClassOptions] = useState([]);
+
+  // -- Directory Filter & Edit States --
+  const [searchRollNo, setSearchRollNo] = useState("");
+  const [filterClass, setFilterClass] = useState("");
+  const [filterDivision, setFilterDivision] = useState("");
+  const [editingStudentId, setEditingStudentId] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    roll: "",
+    enroll: "",
+    email: "",
+    tClass: "",
+    div: "",
+  });
 
   const fetchData = useCallback(async () => {
     try {
@@ -132,7 +159,7 @@ export default function HodDashboard({ user }) {
 
       const allSubQ = query(collection(db, "Subjects"));
       const allSubSnap = await getDocs(allSubQ);
-      const fetchedAllSubjects = allSubSnap.docs.map((d) => d.data());
+      const fetchedAllSubjects = allSubSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
       setAllSubjectList(fetchedAllSubjects);
       setSubjectList(
         fetchedAllSubjects.filter((s) => s.department === user.dept),
@@ -297,7 +324,7 @@ export default function HodDashboard({ user }) {
         roll: "",
         enroll: "",
         email: "",
-        div: "A",
+        div: "",
         tClass: "",
       });
       fetchData();
@@ -645,6 +672,52 @@ export default function HodDashboard({ user }) {
     ),
   ];
 
+  const handleUpdateStudent = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, "Students", editingStudentId), {
+        name: editForm.name.trim(),
+        rollNo: editForm.roll,
+        enrollmentNo: editForm.enroll.trim(),
+        email: editForm.email.trim(),
+        targetClass: editForm.tClass,
+        division: editForm.div,
+      });
+      setEditingStudentId(null);
+      fetchData();
+      success("Student updated successfully.");
+    } catch {
+      notifyError("Failed to update student.");
+    }
+  };
+
+  const handleUpdateSubject = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, "Subjects", editingSubjectId), {
+        name: editSubjectForm.name.trim(),
+        code: editSubjectForm.code.toUpperCase().trim(),
+        isElective: editSubjectForm.isElective,
+      });
+      setEditingSubjectId(null);
+      fetchData();
+      success("Subject updated successfully.");
+    } catch {
+      notifyError("Failed to update subject.");
+    }
+  };
+
+  const filteredStudents = students.filter((s) => {
+    const matchRoll = searchRollNo
+      ? s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+        s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+        s.name?.toLowerCase().includes(searchRollNo.toLowerCase())
+      : true;
+    const matchClass = filterClass ? s.targetClass === filterClass : true;
+    const matchDiv = filterDivision ? s.division === filterDivision : true;
+    return matchRoll && matchClass && matchDiv;
+  });
+
   return (
     <>
       <div className="space-y-6">
@@ -661,13 +734,14 @@ export default function HodDashboard({ user }) {
             </div>
           </div>
           <div
-            className="flex flex-wrap items-center justify-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/60 w-full xl:w-auto"
+            className="flex flex-wrap justify-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/60 w-full xl:w-auto"
             role="tablist"
             aria-label="HOD sections"
           >
             {[
-              { id: "students", label: "Students", icon: Users },
-              { id: "subjects", label: "Subjects", icon: BookOpen },
+              { id: "students", label: "Add Students", icon: UserPlus },
+              { id: "directory", label: "Directory", icon: Users },
+              { id: "subjects", label: "Manage Subjects", icon: BookOpen },
               { id: "allot", label: "Allot", icon: Link },
               { id: "monitor", label: "Monitor", icon: Activity },
               { id: "reports", label: "Reports", icon: PieChart },
@@ -691,8 +765,7 @@ export default function HodDashboard({ user }) {
           </div>
         </div>
         {activeTab === "students" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-in slide-in-from-bottom-4 duration-500">
-            <div className="lg:col-span-2 space-y-6 lg:sticky lg:top-24">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full items-start animate-in slide-in-from-bottom-4 duration-500">
               <Card className="overflow-hidden border-indigo-100 shadow-md">
                 <div className="bg-gradient-to-br from-indigo-50 via-white to-violet-50/50 p-7 relative">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-200 rounded-full blur-3xl opacity-40 z-0 pointer-events-none"></div>
@@ -728,7 +801,7 @@ export default function HodDashboard({ user }) {
                         value={excelClass}
                         onChange={(val) => setExcelClass(val)}
                         options={dynamicClassOptions}
-                        placeholder="-- Select Class --"
+                        placeholder="Select Class"
                       />
                     </div>
                     <div className="flex w-full min-w-[120px] max-w-[150px] flex-col gap-1.5 relative z-40">
@@ -742,7 +815,7 @@ export default function HodDashboard({ user }) {
                           { value: "A", label: "Div A" },
                           { value: "B", label: "Div B" },
                         ]}
-                        placeholder="-- Division --"
+                        placeholder="Division"
                       />
                     </div>
                     <label className="flex flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
@@ -767,68 +840,13 @@ export default function HodDashboard({ user }) {
 
               {/* Manual Student Form */}
               <Card className="p-0 overflow-hidden shadow-sm relative border border-slate-200/80">
-                <div className="border-b border-indigo-50 bg-indigo-50/50 px-5 py-5">
-                  <h3 className="font-extrabold text-indigo-950 flex items-center justify-between text-base">
-                    Student directory
-                    <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-indigo-600 px-2 text-xs font-black text-white tabular-nums shadow-sm">
-                      {students.length}
-                    </span>
+                <div className="border-b border-indigo-50 bg-indigo-50/50 px-5 py-4">
+                  <h3 className="font-extrabold text-indigo-950 text-base">
+                    Add Student Manually
                   </h3>
-                </div>
-                <div className="max-h-[300px] flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
-                  {students.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 px-4 text-center h-full">
-                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 text-indigo-300 shadow-inner">
-                        <Users size={32} strokeWidth={1.5} />
-                      </div>
-                      <p className="text-sm font-bold text-slate-600">
-                        No students found
-                      </p>
-                      <p className="mt-1.5 max-w-[200px] text-[11px] leading-relaxed text-slate-400">
-                        Import an Excel file or add single records below.
-                      </p>
-                    </div>
-                  ) : (
-                    students.map((s) => (
-                      <div
-                        key={s.id}
-                        className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white p-3.5 shadow-sm transition hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/10"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-extrabold text-slate-800 truncate">
-                            {s.name}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className="inline-flex rounded-md bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-indigo-600">
-                              {s.targetClass} · Div {s.division || "A"}
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
-                              {s.enrollmentNo}
-                            </span>
-                          </div>
-                          {s.email && (
-                            <p className="mt-1.5 truncate text-[10px] font-bold text-slate-500 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
-                              {s.email}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          title="Remove student"
-                          onClick={async () => {
-                            if (window.confirm("Delete this student?")) {
-                              await deleteDoc(doc(db, "Students", s.id));
-                              fetchData();
-                            }
-                          }}
-                          className="shrink-0 rounded-xl p-2.5 text-slate-300 transition hover:bg-red-100 hover:text-red-600 focus:outline-none"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    ))
-                  )}
+                  <p className="text-slate-500 text-sm mt-1 leading-relaxed font-medium">
+                    Register a single student. Ensure PRN and Email are correct for portal access.
+                  </p>
                 </div>
                 <form
                   onSubmit={handleManualStudent}
@@ -909,7 +927,7 @@ export default function HodDashboard({ user }) {
                         setStdForm({ ...stdForm, tClass: val })
                       }
                       options={dynamicClassOptions}
-                      placeholder="-- Select Class --"
+                      placeholder="Select Class"
                     />
                   </div>
                   <div className="md:col-span-2 relative z-50">
@@ -937,20 +955,62 @@ export default function HodDashboard({ user }) {
                   </div>
                 </form>
               </Card>
-            </div>
+          </div>
+        )}
 
-            {/* Inventory */}
-            <Card className="flex flex-col border-indigo-100 bg-white shadow-sm p-0 overflow-hidden lg:col-span-1 min-h-[500px]">
+        {/* Inventory / Directory Tab */}
+        {activeTab === "directory" && (
+          <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+            <Card className="flex flex-col border-indigo-100 bg-white shadow-sm p-0 overflow-hidden">
               <div className="border-b border-indigo-50 bg-indigo-50/50 px-5 py-5 sticky top-0 z-10">
                 <h3 className="font-extrabold text-indigo-950 flex items-center justify-between text-base">
                   Student directory
                   <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-indigo-600 px-2 text-xs font-black text-white tabular-nums shadow-sm">
-                    {students.length}
+                    {filteredStudents.length}
                   </span>
                 </h3>
+                <div className="mt-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="relative w-full md:max-w-md">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search size={16} className="text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      className="w-full pl-10 pr-4 py-2 border border-slate-200/80 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-semibold transition-all hover:border-indigo-300 bg-white shadow-sm"
+                      placeholder="Search by name, roll, or PRN..."
+                      value={searchRollNo}
+                      onChange={(e) => setSearchRollNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-3 w-full md:w-auto relative z-[60]">
+                    <div className="min-w-[200px] flex-1 md:flex-none">
+                      <CustomSelect
+                        value={filterClass}
+                        onChange={(val) => setFilterClass(val)}
+                        options={[
+                          { value: "", label: "All Classes" },
+                          ...dynamicClassOptions.flatMap(g => g.options.map(opt => ({ value: opt.value, label: opt.label })))
+                        ]}
+                        placeholder="All Classes"
+                      />
+                    </div>
+                    <div className="min-w-[140px] flex-1 md:flex-none">
+                      <CustomSelect
+                        value={filterDivision}
+                        onChange={(val) => setFilterDivision(val)}
+                        options={[
+                          { value: "", label: "All Divisions" },
+                          { value: "A", label: "Div A" },
+                          { value: "B", label: "Div B" }
+                        ]}
+                        placeholder="All Divisions"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="flex-1 p-4 space-y-3 bg-slate-50/30">
-                {students.length === 0 ? (
+                {filteredStudents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 px-4 text-center h-[300px]">
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 text-indigo-300 shadow-inner">
                       <Users size={32} strokeWidth={1.5} />
@@ -963,12 +1023,56 @@ export default function HodDashboard({ user }) {
                     </p>
                   </div>
                 ) : (
-                  students.map((s) => (
+                  filteredStudents.map((s) => {
+                    if (editingStudentId === s.id) {
+                      return (
+                        <div key={s.id} className="p-4 bg-white rounded-2xl border-2 border-indigo-400 shadow-md transition-all relative z-50 animate-in fade-in zoom-in-95 duration-200">
+                          <form onSubmit={handleUpdateStudent} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Full Name</label>
+                              <input required value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Full Name" />
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Roll No.</label>
+                              <input required value={editForm.roll} onChange={(e) => setEditForm({...editForm, roll: normalizeRollDigits(e.target.value)})} className="input-app py-2 text-sm font-semibold tabular-nums w-full" placeholder="Roll No" />
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">PRN</label>
+                              <input required value={editForm.enroll} onChange={(e) => setEditForm({...editForm, enroll: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="PRN" />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Email</label>
+                              <input required type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Email" />
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Class</label>
+                              <select className="input-app py-2 text-sm font-semibold w-full" value={editForm.tClass} onChange={(e) => setEditForm({ ...editForm, tClass: e.target.value })}>
+                                {dynamicClassOptions.flatMap(g => g.options).map((opt) => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-1">
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Division</label>
+                              <select className="input-app py-2 text-sm font-semibold w-full" value={editForm.div} onChange={(e) => setEditForm({...editForm, div: e.target.value})}>
+                                <option value="A">Div A</option>
+                                <option value="B">Div B</option>
+                              </select>
+                            </div>
+                            <div className="md:col-span-2 flex justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
+                              <button type="button" onClick={() => setEditingStudentId(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
+                              <button type="submit" className="px-5 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all active:scale-95">Save</button>
+                            </div>
+                          </form>
+                        </div>
+                      );
+                    }
+                    return (
                     <div
                       key={s.id}
-                      className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white p-3.5 shadow-sm transition hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/10"
+                      className="group flex flex-col sm:flex-row items-start justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/10 animate-in fade-in duration-300"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 w-full sm:w-auto flex-1">
                         <p className="text-sm font-extrabold text-slate-800 truncate">
                           {s.name}
                         </p>
@@ -987,21 +1091,42 @@ export default function HodDashboard({ user }) {
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        title="Remove student"
-                        onClick={async () => {
-                          if (window.confirm("Delete this student?")) {
-                            await deleteDoc(doc(db, "Students", s.id));
-                            fetchData();
-                          }
-                        }}
-                        className="shrink-0 rounded-xl p-2.5 text-slate-300 transition hover:bg-red-100 hover:text-red-600 focus:outline-none"
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0 border-dashed">
+                        <button
+                          type="button"
+                          title="Edit student"
+                          onClick={() => {
+                            setEditingStudentId(s.id);
+                            setEditForm({
+                              name: s.name || "",
+                              roll: s.rollNo || "",
+                              enroll: s.enrollmentNo || "",
+                              email: s.email || "",
+                              tClass: s.targetClass || "",
+                              div: s.division || "A",
+                            });
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none"
+                        >
+                          <Edit2 size={16} /> <span className="hidden xs:inline">Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Remove student"
+                          onClick={async () => {
+                            if (window.confirm(`Delete student ${s.name}?`)) {
+                              await deleteDoc(doc(db, "Students", s.id));
+                              fetchData();
+                            }
+                          }}
+                          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none"
+                        >
+                          <Trash2 size={16} /> <span className="hidden xs:inline">Delete</span>
+                        </button>
+                      </div>
                     </div>
-                  ))
+                  );
+                })
                 )}
               </div>
             </Card>
@@ -1010,8 +1135,8 @@ export default function HodDashboard({ user }) {
 
         {/* SUBJECTS TAB (YOUR CODE) */}
         {activeTab === "subjects" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-bottom-4 duration-500">
-            <Card className="p-0 overflow-hidden border-indigo-100 shadow-md relative w-full mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full items-start animate-in slide-in-from-bottom-4 duration-500">
+            <Card className="p-0 overflow-hidden border-indigo-100 shadow-md relative w-full">
               <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-r from-emerald-400 to-teal-500"></div>
               <div className="px-8 py-6 border-b border-slate-100 bg-white/50">
                 <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800">
@@ -1086,7 +1211,7 @@ export default function HodDashboard({ user }) {
                       This is an Elective
                     </span>
                     <span className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
-                      Students will choose this manually.
+                      Students will choose this manually while giving feedback.
                     </span>
                   </div>
                 </label>
@@ -1095,7 +1220,7 @@ export default function HodDashboard({ user }) {
                 </button>
               </form>
             </Card>
-            <Card className="flex flex-col border-emerald-100 p-0 overflow-hidden shadow-sm">
+            <Card className="flex flex-col border-emerald-100 p-0 overflow-hidden shadow-sm max-h-[600px]">
               <div className="px-6 py-5 border-b border-emerald-50 bg-emerald-50/50 flex justify-between items-center">
                 <h3 className="font-extrabold text-emerald-950 uppercase text-sm flex items-center gap-2">
                   Subject Inventory
@@ -1114,26 +1239,89 @@ export default function HodDashboard({ user }) {
                     <p className="font-bold text-sm">No Subjects Added</p>
                   </div>
                 ) : (
-                  subjectList.map((s, idx) => (
-                    <div
-                      key={idx}
-                      className="flex justify-between items-center p-4 bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:border-emerald-200 transition-colors hover:shadow-md"
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-sm font-extrabold text-slate-800">
-                          {s.name}
-                        </span>
-                        <span className="text-slate-400 font-bold text-[10px] tracking-widest uppercase mt-0.5">
-                          Code: {s.code}
-                        </span>
+                  subjectList.map((s) => {
+                    if (editingSubjectId === s.id) {
+                      return (
+                        <div key={s.id} className="p-5 bg-white rounded-2xl border-2 border-emerald-400 shadow-md transition-all relative z-50">
+                          <form onSubmit={handleUpdateSubject} className="flex flex-col gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-xs font-semibold text-slate-700 mb-1 block">Subject Name</label>
+                                <input required value={editSubjectForm.name} onChange={(e) => setEditSubjectForm({...editSubjectForm, name: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Subject Name" />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-slate-700 mb-1 block">Subject Code</label>
+                                <input required value={editSubjectForm.code} onChange={(e) => setEditSubjectForm({...editSubjectForm, code: e.target.value})} className="input-app py-2 text-sm font-semibold uppercase w-full" placeholder="Code" />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" className="w-4 h-4 accent-emerald-500" checked={editSubjectForm.isElective} onChange={(e) => setEditSubjectForm({...editSubjectForm, isElective: e.target.checked})} />
+                                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">Elective</span>
+                              </label>
+                              <div className="flex justify-end gap-2 text-right">
+                                <button type="button" onClick={() => setEditingSubjectId(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
+                                <button type="submit" className="px-5 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all active:scale-95">Save</button>
+                              </div>
+                            </div>
+                          </form>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={s.id}
+                        className="group flex flex-col sm:flex-row items-center justify-between p-4 bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:border-emerald-200 transition-all hover:shadow-md animate-in fade-in duration-300"
+                      >
+                        <div className="flex flex-col w-full sm:w-auto flex-1 min-w-0">
+                          <span className="text-sm font-extrabold text-slate-800 truncate">
+                            {s.name}
+                          </span>
+                          <span className="text-slate-400 font-bold text-[10px] tracking-widest uppercase mt-0.5">
+                            Code: {s.code}
+                          </span>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end mt-3 sm:mt-0 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0 border-dashed">
+                          {s.isElective && (
+                            <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                              Elective
+                            </span>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              title="Edit subject"
+                              onClick={() => {
+                                setEditingSubjectId(s.id);
+                                setEditSubjectForm({
+                                  name: s.name || "",
+                                  code: s.code || "",
+                                  isElective: s.isElective || false,
+                                });
+                              }}
+                              className="flex items-center gap-1 p-2 rounded-xl text-sm font-bold text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600 focus:outline-none"
+                            >
+                              <Edit2 size={16} /> <span className="hidden xs:inline">Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete subject"
+                              onClick={async () => {
+                                if (window.confirm(`Delete subject ${s.name}?`)) {
+                                  await deleteDoc(doc(db, "Subjects", s.id));
+                                  fetchData();
+                                }
+                              }}
+                              className="flex items-center gap-1 p-2 rounded-xl text-sm font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none"
+                            >
+                              <Trash2 size={16} /> <span className="hidden xs:inline">Delete</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      {s.isElective && (
-                        <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                          Elective
-                        </span>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </Card>
@@ -1176,7 +1364,7 @@ export default function HodDashboard({ user }) {
                     value: d,
                     label: d,
                   }))}
-                  placeholder="-- Select Department --"
+                  placeholder="Select Department"
                 />
               </div>
               <div className="space-y-1.5 relative z-[70]">
@@ -1191,7 +1379,7 @@ export default function HodDashboard({ user }) {
                   options={allStaffList
                     .filter((s) => s.dept === allotForm.staffDept)
                     .map((s) => ({ value: s.name, label: s.name }))}
-                  placeholder="-- Choose Staff --"
+                  placeholder="Choose Staff"
                 />
               </div>
               <div className="space-y-1.5 relative z-[60]">
@@ -1233,7 +1421,7 @@ export default function HodDashboard({ user }) {
                         })),
                     },
                   ]}
-                  placeholder="-- Choose Subject --"
+                  placeholder="Choose Subject"
                 />
               </div>
               <div className="grid grid-cols-2 gap-5 relative z-50">
@@ -1247,7 +1435,7 @@ export default function HodDashboard({ user }) {
                       setAllotForm({ ...allotForm, tClass: val })
                     }
                     options={dynamicClassOptionsForAllotment}
-                    placeholder="-- Target Class --"
+                    placeholder="Target Class"
                   />
                 </div>
                 <div className="space-y-1.5 relative z-30">
@@ -1264,7 +1452,7 @@ export default function HodDashboard({ user }) {
                       { value: "B", label: "Div B" },
                       { value: "All", label: "All Divisions" },
                     ]}
-                    placeholder="-- Division --"
+                    placeholder="Division"
                   />
                 </div>
               </div>
@@ -1277,7 +1465,7 @@ export default function HodDashboard({ user }) {
 
         {/* NEW: MONITOR TAB */}
         {activeTab === "monitor" && (
-          <Card className="p-0 border-blue-100 flex flex-col h-[75vh] overflow-hidden shadow-md animate-in slide-in-from-bottom-4 duration-500">
+          <Card className="p-0 border-blue-100 flex flex-col overflow-hidden shadow-md animate-in slide-in-from-bottom-4 duration-500 max-h-[85vh]">
             <div className="p-6 border-b border-blue-50 bg-blue-50/30 flex justify-between items-center gap-4 flex-wrap relative z-[80]">
               <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800 uppercase tracking-tight">
                 <div className="p-2 bg-blue-100 rounded-xl">
@@ -1335,8 +1523,10 @@ export default function HodDashboard({ user }) {
                 </div>
               </div>
             </div>
-            <div className="flex-1 overflow-auto bg-slate-50/30">
-              <table className="w-full text-left border-collapse">
+            
+            {monitorDept && monitorDept !== "All" && monitorStaff && monitorStaff !== "All" && monitorDivision && monitorDivision !== "All" ? (
+              <div className="flex-1 overflow-auto bg-slate-50/30">
+                <table className="w-full text-left border-collapse">
                 <thead className="bg-white sticky top-0 shadow-sm z-10 border-b border-slate-200">
                   <tr>
                     <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1392,9 +1582,18 @@ export default function HodDashboard({ user }) {
                       </tr>
                     ))
                   )}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-16 text-center bg-blue-50/20 flex flex-col items-center justify-center">
+                <Activity size={48} className="text-blue-200 mb-4" />
+                <h3 className="text-lg font-black text-blue-900 uppercase tracking-tight">Select Filters to Monitor</h3>
+                <p className="text-sm text-blue-600/70 font-medium mt-2 max-w-sm mx-auto">
+                  Please select a specific Department, Faculty member, and Division above to view live feedback data.
+                </p>
+              </div>
+            )}
           </Card>
         )}
 
@@ -1419,6 +1618,7 @@ export default function HodDashboard({ user }) {
                       value={acadYear}
                       onChange={(e) => setAcadYear(e.target.value)}
                       className="input-app text-sm font-bold py-2.5"
+                      placeholder="e.g. 2024-25"
                     />
                   </div>
                   <div className="flex-1 min-w-[120px]">
@@ -1427,9 +1627,11 @@ export default function HodDashboard({ user }) {
                     </label>
                     <input
                       type="text"
+                      maxLength={3}
                       value={semester}
-                      onChange={(e) => setSemester(e.target.value)}
+                      onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
                       className="input-app text-sm font-bold py-2.5"
+                      placeholder="e.g. VI"
                     />
                   </div>
                   <div className="flex-[1] min-w-[180px] relative z-[60]">
@@ -1450,7 +1652,7 @@ export default function HodDashboard({ user }) {
                           label: d,
                         })),
                       ]}
-                      placeholder="-- Select Department --"
+                      placeholder="Select Department"
                     />
                   </div>
                   <div className="flex-[2] min-w-[200px] relative z-[60]">
@@ -1478,7 +1680,7 @@ export default function HodDashboard({ user }) {
                           .map((s) => s.name)
                         : allStaffList.map((s) => s.name)
                       ).map((s) => ({ value: s, label: s }))}
-                      placeholder="-- All Faculty --"
+                      placeholder="All Faculty"
                     />
                   </div>
                   {reportStaff && (
@@ -1493,7 +1695,7 @@ export default function HodDashboard({ user }) {
                           value: s,
                           label: s,
                         }))}
-                        placeholder="-- All Subjects --"
+                        placeholder="All Subjects"
                       />
                     </div>
                   )}

@@ -74,10 +74,7 @@ export default function StaffDashboard({ user }) {
         const feedData = feedSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setFeedbacks(feedData);
 
-        // Auto-select the first subject if available
-        if (allocData.length > 0) {
-          setSelectedSubject(subjectClassValue(allocData[0]));
-        }
+        // Auto-select is removed to show placeholder
       } catch (error) {
         console.error("Error fetching staff data:", error);
       } finally {
@@ -260,7 +257,7 @@ export default function StaffDashboard({ user }) {
                         label: `${alloc.subject}${ck ? ` (${ck})` : " (class not set)"}`,
                       };
                     })}
-                    placeholder="-- Select Subject --"
+                    placeholder="Select Subject"
                   />
                 </div>
 

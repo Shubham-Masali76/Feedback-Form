@@ -92,16 +92,16 @@ export default function AdminDashboard() {
   const [globalFeedbacks, setGlobalFeedbacks] = useState([]);
   const [schemesList, setSchemesList] = useState([]);
   const [schemeMapping, setSchemeMapping] = useState({
-    year1: "K-Scheme",
-    year2: "K-Scheme",
-    year3: "K-Scheme",
+    year1: "",
+    year2: "",
+    year3: "",
   });
 
   // Report Filters
   const [reportDept, setReportDept] = useState("");
   const [reportStaff, setReportStaff] = useState("");
-  const [acadYear, setAcadYear] = useState("2025-26");
-  const [semester] = useState("VI");
+  const [acadYear, setAcadYear] = useState("");
+  const [semester, setSemester] = useState("");
 
   // Fetch Global Data for the Admin
   const fetchGlobalData = useCallback(async () => {
@@ -941,7 +941,7 @@ export default function AdminDashboard() {
                       value: d,
                       label: d,
                     }))}
-                    placeholder="-- Choose Department --"
+                    placeholder="Choose Department"
                   />
                 </div>
                 {reportDept && (
@@ -956,7 +956,7 @@ export default function AdminDashboard() {
                         value: s,
                         label: s,
                       }))}
-                      placeholder="-- All Faculty --"
+                      placeholder="All Faculty"
                     />
                   </div>
                 )}
@@ -969,6 +969,20 @@ export default function AdminDashboard() {
                     value={acadYear}
                     onChange={(e) => setAcadYear(e.target.value)}
                     className="input-app py-2.5 text-sm font-bold text-center"
+                    placeholder="e.g. 2025-26"
+                  />
+                </div>
+                <div className="flex-1 min-w-[100px]">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-2">
+                    Semester
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
+                    className="input-app py-2.5 text-sm font-bold text-center"
+                    placeholder="e.g. VI"
                   />
                 </div>
               </div>
