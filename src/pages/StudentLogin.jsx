@@ -177,8 +177,10 @@ export default function StudentLogin({
   return (
     <div className="w-full max-w-md">
       <div className="mb-4 flex flex-col items-center text-center">
-        <h1 className="flex w-full items-center justify-center py-2 font-display text-6xl sm:text-7xl font-extrabold leading-none text-slate-900 tracking-[0.08em] transform scale-x-110 origin-center whitespace-nowrap">
-          Feedback Portal
+        <h1 className="flex w-full items-center justify-center py-2 font-display text-6xl sm:text-7xl font-extrabold leading-none tracking-[0.08em] transform scale-x-110 origin-center whitespace-nowrap pb-1">
+          <span className="bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent">
+            Feedback Portal
+          </span>
         </h1>
         <h2 className="font-display text-2xl sm:text-3xl font-bold text-blue-600 uppercase tracking-[0.15em] transform scale-x-110 origin-center mt-2 mb-2 whitespace-nowrap">
           SES Polytechnic Solapur
@@ -283,9 +285,8 @@ export default function StudentLogin({
               <div>
                 <label
                   htmlFor="student-prn"
-                  className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-800"
+                  className="mb-1 block text-xs font-semibold text-slate-800"
                 >
-                  <Lock size={13} className="text-indigo-500" aria-hidden />
                   Enrollment (PRN)
                 </label>
                 <input
@@ -295,7 +296,7 @@ export default function StudentLogin({
                   placeholder="PRN on ID card"
                   value={enrollNo}
                   onChange={(e) => setEnrollNo(e.target.value)}
-                  className="input-app py-2 text-sm"
+                  className="input-app py-2 tabular-nums text-sm font-semibold"
                   required
                 />
               </div>

@@ -104,8 +104,10 @@ export default function Login({
   return (
     <div className="w-full max-w-md">
       <div className="mb-4 flex flex-col items-center text-center">
-        <h1 className="flex w-full items-center justify-center py-2 font-display text-6xl sm:text-7xl font-extrabold leading-none text-slate-900 tracking-[0.08em] transform scale-x-110 origin-center whitespace-nowrap">
-          Feedback Portal
+        <h1 className="flex w-full items-center justify-center py-2 font-display text-6xl sm:text-7xl font-extrabold leading-none tracking-[0.08em] transform scale-x-110 origin-center whitespace-nowrap pb-1">
+          <span className="bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent">
+            Feedback Portal
+          </span>
         </h1>
         <h2 className="font-display text-2xl sm:text-3xl font-bold text-blue-600 uppercase tracking-[0.15em] transform scale-x-110 origin-center mt-2 mb-2 whitespace-nowrap">
           SES Polytechnic Solapur

@@ -14,6 +14,8 @@ import {
   BarChart,
   Eye,
   EyeOff,
+  Search,
+  UserCheck,
 } from "lucide-react";
 import { Card } from "../components/UI";
 import CustomSelect from "../components/UI/CustomSelect";
@@ -34,7 +36,7 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { db, secondaryAuth } from "../firebase";
-import { FEEDBACK_QUESTIONS } from "../constants/feedbackQuestions";
+import { FEEDBACK_QUESTIONS, INSTITUTION_QUESTIONS } from "../constants/feedbackQuestions";
 import { useNotify } from "../context/NotificationContext.jsx";
 
 function firestoreErrorMessage(error, hint = "") {
@@ -98,10 +100,22 @@ export default function AdminDashboard() {
   });
 
   // Report Filters
+  const [reportMode, setReportMode] = useState("faculty");
+  const [reportSubject, setReportSubject] = useState("");
   const [reportDept, setReportDept] = useState("");
   const [reportStaff, setReportStaff] = useState("");
   const [acadYear, setAcadYear] = useState("");
   const [semester, setSemester] = useState("");
+  const [reportYearLevel, setReportYearLevel] = useState("");
+
+  const [globalExitForms, setGlobalExitForms] = useState([]);
+  const [globalExitResponses, setGlobalExitResponses] = useState([]);
+  
+  const [globalInstResponses, setGlobalInstResponses] = useState([]);
+  const [isInstPortalOpen, setIsInstPortalOpen] = useState(false);
+
+  // Faculty Directory Filters
+  const [filterStaffDept, setFilterStaffDept] = useState("");
 
   // Fetch Global Data for the Admin
   const fetchGlobalData = useCallback(async () => {
@@ -119,6 +133,12 @@ export default function AdminDashboard() {
       const feedSnap = await getDocs(collection(db, "Feedbacks"));
       setGlobalFeedbacks(feedSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
 
+      const exitFormsSnap = await getDocs(collection(db, "CourseExitForms"));
+      setGlobalExitForms(exitFormsSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
+
+      const exitResSnap = await getDocs(collection(db, "CourseExitResponses"));
+      setGlobalExitResponses(exitResSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
+
       const schemeSnap = await getDocs(collection(db, "Schemes"));
       setSchemesList(schemeSnap.docs.map((d) => d.data().name));
 
@@ -126,6 +146,17 @@ export default function AdminDashboard() {
       if (mappingSnap.exists()) {
         setSchemeMapping(mappingSnap.data());
       }
+
+      const globalSets = await getDoc(doc(db, "Settings", "Global"));
+      if (globalSets.exists()) {
+        const data = globalSets.data();
+        setIsInstPortalOpen(data.institutionPortalOpen === true);
+        if (data.academicYear) setAcadYear(data.academicYear);
+        if (data.semester) setSemester(data.semester);
+      }
+
+      const instSnap = await getDocs(collection(db, "InstitutionFeedbackResponses"));
+      setGlobalInstResponses(instSnap.docs.map(d => ({ ...d.data(), id: d.id })));
     } catch (err) {
       console.error("Error fetching global data:", err);
     }
@@ -166,7 +197,12 @@ export default function AdminDashboard() {
 
   const handleCreateScheme = async (e) => {
     e.preventDefault();
-    const name = schemeName.trim();
+    let name = schemeName.trim();
+    if (/^[a-z]$/i.test(name)) {
+      name = name.toUpperCase() + "-Scheme";
+    } else if (!/scheme$/i.test(name)) {
+      name = name + " Scheme";
+    }
     const year = schemeYear.trim();
     if (!name || !year) {
       warning("Please enter scheme name and year.");
@@ -320,13 +356,52 @@ export default function AdminDashboard() {
     setIsSubmitting(false);
   };
 
+  const handleToggleInstPortal = async () => {
+    setIsSubmitting(true);
+    try {
+      const newStatus = !isInstPortalOpen;
+      await updateDoc(doc(db, "Settings", "Global"), {
+        institutionPortalOpen: newStatus,
+      });
+      setIsInstPortalOpen(newStatus);
+      success(`Institution Feedback Portal ${newStatus ? 'Opened' : 'Closed'}`);
+    } catch (error) {
+       console.error(error);
+       notifyError("Failed to toggle portal.");
+    }
+    setIsSubmitting(false);
+  };
+
   // --- REPORT ENGINE CALCULATIONS ---
-  const reportData = globalFeedbacks.filter(
-    (f) => f.department === reportDept && f.staffName === reportStaff,
-  );
+  const activeDataSource = reportMode === "exit" 
+    ? globalExitResponses 
+    : reportMode === "institution" 
+      ? globalInstResponses 
+      : globalFeedbacks;
+
+  const reportData = activeDataSource.filter((f) => {
+    const matchDept = !reportDept || f.department === reportDept;
+    if (reportMode === "institution") {
+      const matchYear = !acadYear || f.academicYear === acadYear;
+      return matchDept && matchYear;
+    }
+    const matchStaff = f.staffName === reportStaff;
+    const matchSub = !reportSubject || f.subject === reportSubject;
+    return matchDept && matchStaff && matchSub;
+  });
   const totalStudents = reportData.length;
 
-  const scoreCounts = Array.from({ length: FEEDBACK_QUESTIONS.length }, () => ({
+  const activeExitForm = reportMode === "exit" && reportSubject
+    ? globalExitForms.find(f => f.staffName === reportStaff && f.subject === reportSubject && f.department === reportDept)
+    : null;
+  const activeQuestions = reportMode === "exit" 
+    ? (activeExitForm?.questions || []) 
+    : reportMode === "institution" 
+      ? INSTITUTION_QUESTIONS 
+      : FEEDBACK_QUESTIONS;
+  const qCount = activeQuestions.length;
+
+  const scoreCounts = Array.from({ length: qCount }, () => ({
     5: 0,
     4: 0,
     3: 0,
@@ -337,7 +412,7 @@ export default function AdminDashboard() {
     reportData.forEach((fb) => {
       Object.keys(fb.scores).forEach((qIndex) => {
         const rating = parseInt(fb.scores[qIndex]);
-        if (scoreCounts[qIndex][rating] !== undefined)
+        if (scoreCounts[qIndex] && scoreCounts[qIndex][rating] !== undefined)
           scoreCounts[qIndex][rating]++;
       });
     });
@@ -347,7 +422,7 @@ export default function AdminDashboard() {
   const colScores = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   let grandTotalScore = 0;
 
-  for (let i = 0; i < FEEDBACK_QUESTIONS.length; i++) {
+  for (let i = 0; i < qCount; i++) {
     [5, 4, 3, 2, 1].forEach((rating) => {
       colTotals[rating] += scoreCounts[i][rating];
       colScores[rating] += scoreCounts[i][rating] * rating;
@@ -355,7 +430,7 @@ export default function AdminDashboard() {
     });
   }
 
-  const maxPossibleScore = totalStudents * FEEDBACK_QUESTIONS.length * 5;
+  const maxPossibleScore = totalStudents * qCount * 5;
   const marksOutOf25 =
     maxPossibleScore > 0
       ? ((grandTotalScore / maxPossibleScore) * 25).toFixed(2)
@@ -382,9 +457,31 @@ export default function AdminDashboard() {
     .filter((s) => s.dept === reportDept && s.active !== false)
     .map((s) => s.name);
 
-  const staffAccounts = globalStaffList.filter((u) => u.role === "staff");
-  const activeStaffRows = staffAccounts.filter((u) => u.active !== false);
-  const inactiveStaffRows = staffAccounts.filter((u) => u.active === false);
+  const activeFormSource = reportMode === "exit" ? globalExitForms : globalFeedbacks;
+  const staffSubjects = [
+    ...new Set(
+      [...globalFeedbacks, ...globalExitForms]
+        .filter((f) => f.staffName === reportStaff && f.department === reportDept)
+        .map((f) => f.subject)
+    )
+  ];
+
+  const staffAccounts = globalStaffList
+    .filter((u) => u.role === "staff" || u.role === "hod")
+    .sort((a, b) => {
+      // HODs first, then staff members
+      if (a.role === "hod" && b.role !== "hod") return -1;
+      if (a.role !== "hod" && b.role === "hod") return 1;
+      return a.name.localeCompare(b.name);
+    });
+  
+  // Filtered Logic for Staff Directory
+  const matchesSearchAndDept = (u) => {
+    return filterStaffDept === "" || u.dept === filterStaffDept;
+  };
+
+  const activeStaffRows = staffAccounts.filter((u) => u.active !== false && matchesSearchAndDept(u));
+  const inactiveStaffRows = staffAccounts.filter((u) => u.active === false && matchesSearchAndDept(u));
 
   return (
     <div className="space-y-6">
@@ -405,11 +502,12 @@ export default function AdminDashboard() {
           role="tablist"
           aria-label="Admin sections"
         >
-          {["departments", "hods", "schemes", "staff", "feedback"].map(
+          {["departments", "hods", "schemes", "staff", "directory", "feedback", "controls"].map(
             (tab) => {
               let label = tab;
               if (tab === "feedback") label = "Reports";
               else if (tab === "hods") label = "HODs";
+              else if (tab === "directory") label = "Faculty List";
               else label = tab.charAt(0).toUpperCase() + tab.slice(1);
 
               return (
@@ -419,11 +517,10 @@ export default function AdminDashboard() {
                   role="tab"
                   aria-selected={activeTab === tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                    activeTab === tab
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab
                       ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200 scale-100"
                       : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
@@ -703,34 +800,34 @@ export default function AdminDashboard() {
       )}
 
       {activeTab === "staff" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          <Card className="overflow-hidden p-0">
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-              <h2 className="page-card-title flex items-center gap-2.5">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                  <UserPlus size={20} />
+        <div className="max-w-4xl mx-auto">
+          <Card className="overflow-hidden p-0 shadow-soft-xl border-slate-200/60">
+            <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
+              <h2 className="page-card-title flex items-center gap-3">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-lg shadow-indigo-100">
+                  <UserPlus size={24} />
                 </span>
-                Add faculty (staff)
+                <span className="flex flex-col text-left">
+                  <span className="text-sm font-bold text-slate-900 tracking-tight">Add faculty (staff)</span>
+                  <span className="text-[11px] font-medium text-slate-500 mt-0.5 uppercase tracking-wider">New access account</span>
+                </span>
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Unique email per person — cannot duplicate an HOD email.
-              </p>
             </div>
-            <form onSubmit={handleCreateStaff} className="p-6 md:p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5 mb-6">
+            <form onSubmit={handleCreateStaff} className="p-6 md:p-10">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
                 <div>
-                  <label className="section-title mb-2 block">Full name</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Full name</label>
                   <input
                     type="text"
                     placeholder="Faculty name"
-                    className="input-app-admin"
+                    className="input-app-admin h-12 bg-slate-50/50 border-slate-200/80 focus:bg-white px-4"
                     value={staffName}
                     onChange={(e) => setStaffName(e.target.value)}
                     required
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2 block">Department</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Department</label>
                   <CustomSelect
                     value={staffDept}
                     onChange={(val) => setStaffDept(val)}
@@ -742,25 +839,25 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2 block">Email</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Email</label>
                   <input
                     type="email"
                     placeholder="staff@college.edu"
-                    className="input-app-admin"
+                    className="input-app-admin h-12 bg-slate-50/50 border-slate-200/80 focus:bg-white px-4"
                     value={staffEmail}
                     onChange={(e) => setStaffEmail(e.target.value)}
                     required
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2 block">
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">
                     Initial password
                   </label>
                   <div className="relative">
                     <input
                       type={showStaffPassword ? "text" : "password"}
                       placeholder="Min. 6 characters"
-                      className="input-app-admin w-full pr-10"
+                      className="input-app-admin w-full h-12 bg-slate-50/50 border-slate-200/80 focus:bg-white px-4 pr-12"
                       value={staffPassword}
                       onChange={(e) => setStaffPassword(e.target.value)}
                       required
@@ -769,148 +866,205 @@ export default function AdminDashboard() {
                     <button
                       type="button"
                       onClick={() => setShowStaffPassword(!showStaffPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-violet-600 focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-violet-600 focus:outline-none transition-colors"
                       tabIndex="-1"
                     >
                       {showStaffPassword ? (
-                        <EyeOff size={18} />
+                        <EyeOff size={20} />
                       ) : (
-                        <Eye size={18} />
+                        <Eye size={20} />
                       )}
                     </button>
                   </div>
                 </div>
               </div>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-3 text-sm font-bold text-white shadow-md shadow-violet-500/20 hover:from-violet-700 hover:to-fuchsia-700 transition-all active:scale-95 disabled:opacity-60 disabled:scale-100 uppercase tracking-widest mt-2"
-              >
-                {isSubmitting ? (
-                  "Creating..."
-                ) : (
-                  <>
-                    <PlusCircle size={18} strokeWidth={2.5} /> Save Staff
-                  </>
-                )}
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-2xl bg-slate-50 border border-slate-200/60">
+                <div className="flex items-start gap-4">
+                  <div className="mt-1 h-6 w-6 flex items-center justify-center rounded-xl bg-violet-100 text-violet-600 shadow-sm">
+                    <UserCheck size={14} strokeWidth={3} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-500 leading-relaxed max-w-[400px]">
+                    Once saved, the faculty member can immediately log in and will be available for subject allotments by their HOD.
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="inline-flex w-full sm:w-auto items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-700 px-8 py-4 text-sm font-black text-white shadow-xl shadow-indigo-200/50 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-60 disabled:scale-100 uppercase tracking-widest min-w-[200px]"
+                >
+                  {isSubmitting ? (
+                    "Creating Account..."
+                  ) : (
+                    <>
+                      <PlusCircle size={20} strokeWidth={2.5} /> Save Faculty
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </Card>
+        </div>
+      )}
 
-          <Card className="overflow-hidden p-0">
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-              <h2 className="page-card-title flex items-center gap-2">
-                <Users size={18} className="text-slate-500" />
-                Faculty accounts
-              </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Deactivate retired or departed faculty — they disappear from HOD
-                allotments and reports but historical feedback stays in the
-                database. Firebase login remains until you remove the user in
-                Firebase Console if required.
+      {activeTab === "directory" && (
+        <Card className="flex flex-col border-slate-200 bg-white shadow-soft-xl p-0 overflow-hidden">
+          <div className="border-b border-slate-200 bg-slate-50/50 px-6 py-6 sticky top-0 z-10 backdrop-blur-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-start gap-10">
+              <div>
+                <h3 className="font-black text-slate-900 flex items-center gap-3 text-lg tracking-tight">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-200">
+                    <Users size={20} />
+                  </span>
+                  Faculty Directory
+                  <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-slate-100 px-2 text-[10px] font-black text-slate-600 shadow-inner ring-1 ring-slate-200">
+                    {activeStaffRows.length + inactiveStaffRows.length}
+                  </span>
+                </h3>
+              </div>
+              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                <div className="min-w-[240px] relative z-[60]">
+                  <CustomSelect
+                    value={filterStaffDept}
+                    onChange={(val) => setFilterStaffDept(val)}
+                    options={departmentsList.map((d) => ({ value: d, label: d }))}
+                    placeholder="Select Department"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={`px-6 md:px-10 py-6 md:py-8 ${!filterStaffDept ? 'space-y-4' : 'space-y-8'} ${!filterStaffDept ? 'bg-slate-50/30' : 'bg-white'}`}>
+            <div className="rounded-2xl bg-blue-50/50 border border-blue-100 p-5 flex items-start gap-4 shadow-sm">
+              <div className="h-8 w-8 shrink-0 flex items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                <Shield size={18} />
+              </div>
+              <p className="text-xs leading-relaxed text-blue-800 font-semibold max-w-4xl">
+                Manage your department's faculty accounts here. Deactivated faculty will lose access immediately and disappear from HOD allotments, but their historical data remains preserved for reports.
               </p>
             </div>
-            <div className="p-6 md:p-8 space-y-6">
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                  Active ({activeStaffRows.length})
-                </h3>
-                {activeStaffRows.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No staff accounts yet.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50/90 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-                          <th className="px-4 py-3">Name</th>
-                          <th className="px-4 py-3">Department</th>
-                          <th className="px-4 py-3 w-36 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeStaffRows.map((row) => (
-                          <tr
-                            key={row.id}
-                            className="border-b border-slate-100 last:border-0"
-                          >
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {row.name}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">
-                              {row.dept}
-                            </td>
-                            <td className="px-4 py-3 text-right">
+
+            {!filterStaffDept ? (
+              <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+                <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[2.5rem] bg-white shadow-soft-2xl border border-slate-100 text-slate-200 group hover:scale-110 transition-transform duration-500">
+                  <Building2 size={48} strokeWidth={1} className="group-hover:text-violet-200 transition-colors" />
+                </div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Account Directory Empty</h3>
+                <p className="mt-2.5 max-w-[320px] text-sm text-slate-500 font-semibold leading-relaxed">
+                  Please select a department from the dropdown to view and manage its faculty personnel.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* ACTIVE STAFF */}
+                <div>
+                  <div className="flex items-center justify-between mb-4 px-2">
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
+                      Active Personnel ({activeStaffRows.length})
+                    </h3>
+                  </div>
+                  {activeStaffRows.length === 0 ? (
+                    <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center bg-slate-50/50">
+                      <p className="text-sm font-bold text-slate-400 italic">
+                        No active staff members found in {filterStaffDept}.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-4">
+                      {activeStaffRows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="group flex flex-col sm:flex-row items-center justify-between gap-5 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm hover:shadow-xl hover:border-violet-500/30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2"
+                        >
+                          <div className="min-w-0 flex-1 flex items-center gap-4">
+                            <div className="h-12 w-12 shrink-0 flex items-center justify-center rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 group-hover:from-violet-50 group-hover:to-violet-100 group-hover:text-violet-600 transition-all shadow-sm">
+                              {row.role === "hod" ? <Shield size={22} /> : <Users size={22} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-black text-slate-900 group-hover:text-violet-700 transition-colors truncate">
+                                {row.name}
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                <span className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-black ring-1 ${
+                                  row.role === "hod" 
+                                  ? "bg-amber-50 text-amber-700 ring-amber-200" 
+                                  : "bg-violet-50 text-violet-700 ring-violet-200"
+                                }`}>
+                                  {row.role === "hod" ? "HOD" : "STAFF"}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                                  <div className="w-1 h-1 rounded-full bg-slate-300"></div>
+                                  {row.email}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                            <div className="shrink-0 flex items-center gap-2">
                               <button
                                 type="button"
                                 disabled={isSubmitting}
-                                onClick={() =>
-                                  handleDeactivateStaff(row.id, row.name)
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
+                                onClick={() => handleDeactivateStaff(row.id, row.name)}
+                                className="h-10 px-4 flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 text-[11px] font-black text-red-600 hover:bg-red-600 hover:text-white hover:shadow-lg hover:shadow-red-200 transition-all active:scale-95 uppercase tracking-wider"
+                                title="Deactivate Account"
                               >
-                                <UserX size={14} />
-                                Deactivate
+                                <UserX size={16} strokeWidth={2.5} />
+                                <span>Deactivate Account</span>
                               </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* INACTIVE STAFF */}
+                {inactiveStaffRows.length > 0 && (
+                  <div className="pt-6 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Deactivated Personnel ({inactiveStaffRows.length})
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                      {inactiveStaffRows.map((row) => (
+                        <div
+                          key={row.id}
+                          className="group flex flex-col sm:flex-row items-center justify-between gap-5 rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50/50 p-4 opacity-70 grayscale-[0.8] hover:grayscale-0 hover:opacity-100 hover:border-slate-300 transition-all duration-300"
+                        >
+                          <div className="min-w-0 flex-1 flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-slate-600 truncate line-through decoration-slate-400">
+                                {row.name}
+                              </p>
+                              <p className="text-[10px] font-semibold text-slate-400 mt-1 flex items-center gap-1.5 uppercase tracking-tighter">
+                                <span className="font-black text-slate-500">{row.role}</span>
+                                <span className="text-slate-200 inline-block">|</span>
+                                {row.email}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            <button
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => handleReactivateStaff(row.id, row.name)}
+                              className="h-9 px-4 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 text-[10px] font-black text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all active:scale-95"
+                            >
+                              <RotateCcw size={14} strokeWidth={3} />
+                              RESTORE
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
-
-              {inactiveStaffRows.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                    Deactivated ({inactiveStaffRows.length})
-                  </h3>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 border-dashed">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50/90 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-                          <th className="px-4 py-3">Name</th>
-                          <th className="px-4 py-3">Department</th>
-                          <th className="px-4 py-3 w-36 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {inactiveStaffRows.map((row) => (
-                          <tr
-                            key={row.id}
-                            className="border-b border-slate-100 last:border-0 opacity-90"
-                          >
-                            <td className="px-4 py-3 font-medium text-slate-600">
-                              {row.name}
-                            </td>
-                            <td className="px-4 py-3 text-slate-500">
-                              {row.dept}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                type="button"
-                                disabled={isSubmitting}
-                                onClick={() =>
-                                  handleReactivateStaff(row.id, row.name)
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
-                              >
-                                <RotateCcw size={14} />
-                                Reactivate
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
+              </>
+            )}
+          </div>
+        </Card>
       )}
 
       {/* NEW: THE GLOBAL FEEDBACK TAB FOR ADMIN */}
@@ -925,10 +1079,35 @@ export default function AdminDashboard() {
                 Global Report Configuration
               </h3>
             </div>
-            <div className="p-6 md:p-8 flex flex-wrap gap-5 items-center justify-between">
+            <div className="p-6 md:p-8 flex flex-wrap gap-5 items-end justify-between">
               <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
-                <div className="flex-1 min-w-[200px] relative z-50">
-                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-2">
+                <div className="flex-1 min-w-[120px]">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
+                    Academic Year
+                  </label>
+                  <input
+                    type="text"
+                    value={acadYear}
+                    onChange={(e) => setAcadYear(e.target.value)}
+                    className="input-app py-2.5 text-sm font-bold px-4"
+                    placeholder="e.g. 2025-26"
+                  />
+                </div>
+                <div className="flex-1 min-w-[120px]">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
+                    Semester
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
+                    className="input-app py-2.5 text-sm font-bold px-4"
+                    placeholder="e.g. VI"
+                  />
+                </div>
+                <div className="flex-[1.5] min-w-[200px] relative z-50">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Department
                   </label>
                   <CustomSelect
@@ -946,12 +1125,15 @@ export default function AdminDashboard() {
                 </div>
                 {reportDept && (
                   <div className="flex-[2] min-w-[200px] relative z-40 animate-in fade-in duration-300">
-                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-2">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                       Faculty
                     </label>
                     <CustomSelect
                       value={reportStaff}
-                      onChange={(val) => setReportStaff(val)}
+                      onChange={(val) => {
+                        setReportStaff(val);
+                        setReportSubject("");
+                      }}
                       options={filteredStaffList.map((s) => ({
                         value: s,
                         label: s,
@@ -960,42 +1142,57 @@ export default function AdminDashboard() {
                     />
                   </div>
                 )}
-                <div className="flex-1 min-w-[100px]">
-                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-2">
-                    Academic Year
-                  </label>
-                  <input
-                    type="text"
-                    value={acadYear}
-                    onChange={(e) => setAcadYear(e.target.value)}
-                    className="input-app py-2.5 text-sm font-bold text-center"
-                    placeholder="e.g. 2025-26"
-                  />
-                </div>
-                <div className="flex-1 min-w-[100px]">
-                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-2">
-                    Semester
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={3}
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
-                    className="input-app py-2.5 text-sm font-bold text-center"
-                    placeholder="e.g. VI"
-                  />
-                </div>
+                {reportStaff && (
+                  <div className="flex-[2] min-w-[200px] relative z-[35] animate-in fade-in duration-300">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
+                      Subject
+                    </label>
+                    <CustomSelect
+                      value={reportSubject}
+                      onChange={(val) => setReportSubject(val)}
+                      options={staffSubjects.map((s) => ({
+                        value: s,
+                        label: s,
+                      }))}
+                      placeholder="All Subjects"
+                    />
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => window.print()}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto mt-4 xl:mt-0"
-              >
-                <Printer size={18} strokeWidth={2.5} /> Print Report
-              </button>
+
+                <button
+                  onClick={() => window.print()}
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto mt-4 xl:mt-0"
+                >
+                  <Printer size={18} strokeWidth={2.5} /> Print Report
+                </button>
             </div>
           </Card>
 
-          {reportDept && reportStaff && totalStudents > 0 ? (
+          <div className="flex justify-center mb-6 animate-in fade-in duration-500 mt-2">
+              <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
+                <button
+                  onClick={() => setReportMode("faculty")}
+                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Faculty Feedback
+                </button>
+                <button
+                  onClick={() => setReportMode("exit")}
+                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Course Exit Survey
+                </button>
+                <button
+                  onClick={() => setReportMode("institution")}
+                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "institution" ? "bg-amber-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Institution Feedback
+                </button>
+              </div>
+            </div>
+
+          {(reportMode === "institution" || (reportDept && reportStaff)) && totalStudents > 0 && qCount > 0 ? (
             <>
               {/* --- VISUAL CHARTS (Hidden when printing) --- */}
               <div className="grid md:grid-cols-3 gap-6 mb-8 mt-4 print:hidden">
@@ -1020,7 +1217,7 @@ export default function AdminDashboard() {
                       <span className="font-black text-sm">{marksOutOf25}</span>
                     </div>
                   </div>
-                  <div className="w-full h-[320px]">
+                  <div className="w-full relative">
                     <DonutChart
                       data={[
                         { name: "Excellent (5)", value: colTotals[5] },
@@ -1051,8 +1248,8 @@ export default function AdminDashboard() {
                       <span className="text-sm text-slate-400">/ 5.0</span>
                     </h2>
                   </div>
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-4">
-                    {FEEDBACK_QUESTIONS.map((q, idx) => {
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-4">
+                    {activeQuestions.map((q, idx) => {
                       const qTotalScore =
                         scoreCounts[idx][5] * 5 +
                         scoreCounts[idx][4] * 4 +
@@ -1061,21 +1258,24 @@ export default function AdminDashboard() {
                         scoreCounts[idx][1] * 1;
                       const qAvg = (qTotalScore / totalStudents).toFixed(1);
                       const widthPercent = (qAvg / 5) * 100;
+                      const numAvg = parseFloat(qAvg);
                       const barColor =
-                        qAvg >= 4.0
+                        numAvg >= 4.5
                           ? "bg-green-500"
-                          : qAvg >= 3.0
+                          : numAvg >= 3.5
                             ? "bg-blue-500"
-                            : qAvg >= 2.0
+                            : numAvg >= 2.5
                               ? "bg-yellow-500"
-                              : "bg-red-500";
+                              : numAvg >= 1.5
+                                ? "bg-orange-500"
+                                : "bg-red-500";
                       return (
                         <div key={idx} className="relative">
-                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-                            <span className="truncate w-3/4">
+                          <div className="flex justify-between items-start text-xs md:text-[13px] font-bold text-slate-700 mb-1.5 gap-4">
+                            <span className="leading-snug">
                               {idx + 1}. {q}
                             </span>
-                            <span>{qAvg}</span>
+                            <span className="shrink-0 font-black text-slate-800">{qAvg}</span>
                           </div>
                           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                             <div
@@ -1091,155 +1291,309 @@ export default function AdminDashboard() {
               </div>
 
               {/* --- OFFICIAL MSBTE K15 TABLE (Printable) --- */}
-              <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0">
-                <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
-                  <h3 className="text-sm">
-                    Maharashtra State Board of Technical Education
-                  </h3>
-                  <h2 className="text-lg mt-1">STUDENT FEEDBACK</h2>
-                  <p className="absolute right-8 top-8 font-bold text-sm">
-                    K15
-                  </p>
-                </div>
-                <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
-                  <p>
-                    Institute Name: Solapur Education Society's Polytechnic,
-                    Solapur
-                  </p>
-                  <div className="border-t border-black my-2"></div>
-                  <p>Academic Year :- {acadYear}</p>
-                  <div className="border-t border-black my-2"></div>
-                  <div className="flex justify-between">
-                    <p>Programme: {reportDept}</p>
-                    <p>Semester: {semester}</p>
-                    <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+              {reportMode !== "exit" && (
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0">
+                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
+                    <h3 className="text-sm">
+                      Maharashtra State Board of Technical Education
+                    </h3>
+                    <h2 className="text-lg mt-1">STUDENT FEEDBACK</h2>
+                    <p className="absolute right-8 top-8 font-bold text-sm">
+                      K15
+                    </p>
                   </div>
-                  <div className="border-t border-black my-2"></div>
-                  <p className="pt-2">Name Of The Faculty :- {reportStaff}</p>
-                </div>
-                <table className="w-full text-xs border-collapse border border-black text-center mt-4">
-                  <thead>
-                    <tr className="font-bold bg-slate-50 print:bg-transparent">
-                      <th className="border border-black p-2 w-10">
-                        Sr.
-                        <br />
-                        No.
-                      </th>
-                      <th className="border border-black p-2 text-left">
-                        Parameter
-                      </th>
-                      <th className="border border-black p-2 w-16">
-                        5 - Excellent
-                      </th>
-                      <th className="border border-black p-2 w-16">
-                        4 - Very Good
-                      </th>
-                      <th className="border border-black p-2 w-16">3 - Good</th>
-                      <th className="border border-black p-2 w-16">
-                        2 - Satisfactory
-                      </th>
-                      <th className="border border-black p-2 w-16">
-                        1 - Not Satisfactory
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {FEEDBACK_QUESTIONS.map((q, idx) => (
-                      <tr key={idx}>
-                        <td className="border border-black p-1.5 font-bold">
-                          {idx + 1}
-                        </td>
-                        <td className="border border-black p-1.5 text-left font-semibold">
-                          {q}
+                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
+                    <p>
+                      Institute Name: Solapur Education Society's Polytechnic,
+                      Solapur
+                    </p>
+                    <div className="border-t border-black my-2"></div>
+                    <p>Academic Year :- {acadYear}</p>
+                    <div className="border-t border-black my-2"></div>
+                    <div className="flex justify-between">
+                      <p>Programme: {reportDept}</p>
+                      <p>Semester: {semester}</p>
+                      <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                    </div>
+                    <div className="border-t border-black my-2"></div>
+                    <p className="pt-2">Name Of The Faculty :- {reportStaff}</p>
+                  </div>
+                  <table className="w-full text-xs border-collapse border border-black text-center mt-4">
+                    <thead>
+                      <tr className="font-bold bg-slate-50 print:bg-transparent">
+                        <th className="border border-black p-2 w-10">
+                          Sr.
+                          <br />
+                          No.
+                        </th>
+                        <th className="border border-black p-2 text-left">
+                          Parameter
+                        </th>
+                        <th className="border border-black p-2 w-16">
+                          5 - Excellent
+                        </th>
+                        <th className="border border-black p-2 w-16">
+                          4 - Very Good
+                        </th>
+                        <th className="border border-black p-2 w-16">3 - Good</th>
+                        <th className="border border-black p-2 w-16">
+                          2 - Satisfactory
+                        </th>
+                        <th className="border border-black p-2 w-16">
+                          1 - Not Satisfactory
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {FEEDBACK_QUESTIONS.map((q, idx) => (
+                        <tr key={idx}>
+                          <td className="border border-black p-1.5 font-bold">
+                            {idx + 1}
+                          </td>
+                          <td className="border border-black p-1.5 text-left font-semibold">
+                            {q}
+                          </td>
+                          <td className="border border-black p-1.5">
+                            {scoreCounts[idx][5]}
+                          </td>
+                          <td className="border border-black p-1.5">
+                            {scoreCounts[idx][4]}
+                          </td>
+                          <td className="border border-black p-1.5">
+                            {scoreCounts[idx][3]}
+                          </td>
+                          <td className="border border-black p-1.5">
+                            {scoreCounts[idx][2]}
+                          </td>
+                          <td className="border border-black p-1.5">
+                            {scoreCounts[idx][1]}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="font-bold">
+                        <td
+                          colSpan="2"
+                          className="border border-black p-1.5 text-right"
+                        >
+                          Count
                         </td>
                         <td className="border border-black p-1.5">
-                          {scoreCounts[idx][5]}
+                          {colTotals[5]}
                         </td>
                         <td className="border border-black p-1.5">
-                          {scoreCounts[idx][4]}
+                          {colTotals[4]}
                         </td>
                         <td className="border border-black p-1.5">
-                          {scoreCounts[idx][3]}
+                          {colTotals[3]}
                         </td>
                         <td className="border border-black p-1.5">
-                          {scoreCounts[idx][2]}
+                          {colTotals[2]}
                         </td>
                         <td className="border border-black p-1.5">
-                          {scoreCounts[idx][1]}
+                          {colTotals[1]}
                         </td>
                       </tr>
-                    ))}
-                    <tr className="font-bold">
-                      <td
-                        colSpan="2"
-                        className="border border-black p-1.5 text-right"
-                      >
-                        Count
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colTotals[5]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colTotals[4]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colTotals[3]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colTotals[2]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colTotals[1]}
-                      </td>
-                    </tr>
-                    <tr className="font-bold">
-                      <td
-                        colSpan="2"
-                        className="border border-black p-1.5 text-right"
-                      >
-                        Total Score
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colScores[5]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colScores[4]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colScores[3]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colScores[2]}
-                      </td>
-                      <td className="border border-black p-1.5">
-                        {colScores[1]}
-                      </td>
-                    </tr>
-                    <tr className="font-bold bg-purple-50 print:bg-transparent">
-                      <td
-                        colSpan="6"
-                        className="border border-black p-3 text-right text-sm text-purple-900 print:text-black"
-                      >
-                        Average Marks Obtained out of 25
-                      </td>
-                      <td className="border border-black p-3 text-sm text-purple-900 print:text-black">
-                        {marksOutOf25}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                      <tr className="font-bold">
+                        <td
+                          colSpan="2"
+                          className="border border-black p-1.5 text-right"
+                        >
+                          Total Score
+                        </td>
+                        <td className="border border-black p-1.5">
+                          {colScores[5]}
+                        </td>
+                        <td className="border border-black p-1.5">
+                          {colScores[4]}
+                        </td>
+                        <td className="border border-black p-1.5">
+                          {colScores[3]}
+                        </td>
+                        <td className="border border-black p-1.5">
+                          {colScores[2]}
+                        </td>
+                        <td className="border border-black p-1.5">
+                          {colScores[1]}
+                        </td>
+                      </tr>
+                      <tr className="font-bold bg-purple-50 print:bg-transparent">
+                        <td
+                          colSpan="6"
+                          className="border border-black p-3 text-right text-sm text-purple-900 print:text-black"
+                        >
+                          Average Marks Obtained out of 25
+                        </td>
+                        <td className="border border-black p-3 text-sm text-purple-900 print:text-black">
+                          {marksOutOf25}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
 
-                <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
-                  <div className="text-left border-black p-4">
-                    <p>Signature of Principal :- ________________</p>
+                </div>
+              )}
+
+              {reportMode === "exit" && (
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase">
+                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
+                    <h3 className="text-sm">
+                      Maharashtra State Board of Technical Education
+                    </h3>
+                    <h2 className="text-lg mt-1">COURSE EXIT SURVEY REPORT</h2>
+                  </div>
+                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
+                    <p>
+                      Institute Name: Solapur Education Society&#39;s Polytechnic,
+                      Solapur
+                    </p>
+                    <div className="border-t border-black my-2"></div>
+                    <div className="flex justify-between">
+                      <p>Course :- {reportSubject}</p>
+                      <p>Academic Year :- {acadYear}</p>
+                    </div>
+                    <div className="border-t border-black my-2"></div>
+                    <div className="flex justify-between">
+                      <p>Programme: {reportDept}</p>
+                      <p>Semester: {semester}</p>
+                      <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                    </div>
+                    <div className="border-t border-black my-2"></div>
+                    <p className="pt-2">
+                      Name Of The Faculty :- {reportStaff}
+                    </p>
+                  </div>
+                  <table className="w-full text-[11px] border-collapse border border-black text-center mt-4">
+                    <thead>
+                      <tr className="font-bold bg-slate-50 print:bg-transparent">
+                        <th className="border border-black p-2 w-10">Sr. No.</th>
+                        <th className="border border-black p-2 text-left">Parameters (Course Outcomes)</th>
+                        <th className="border border-black p-2 w-14">Excellent 5</th>
+                        <th className="border border-black p-2 w-14">Very good 4</th>
+                        <th className="border border-black p-2 w-14">Good 3</th>
+                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
+                        <th className="border border-black p-2 w-14">Average 1</th>
+                        <th className="border border-black p-2 w-14">Max. Marks</th>
+                        <th className="border border-black p-2 w-14">TOTAL</th>
+                        <th className="border border-black p-2 w-14">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeQuestions.map((q, idx) => {
+                        const rowTotal = (scoreCounts[idx][5] * 5) + (scoreCounts[idx][4] * 4) + (scoreCounts[idx][3] * 3) + (scoreCounts[idx][2] * 2) + (scoreCounts[idx][1] * 1);
+                        const rowMax = totalStudents * 5;
+                        const rowPerc = rowMax > 0 ? ((rowTotal / rowMax) * 100).toFixed(1) : "0.0";
+                        return (
+                          <tr key={idx}>
+                            <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
+                            <td className="border border-black p-1.5 text-left font-semibold">{q}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][5]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][4]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][3]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][2]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][1]}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowMax}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowTotal}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowPerc}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
+                    <div className="text-left border-black p-4">
+                      <p>Signature of Principal :- ________________</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {reportMode === "institution" && (
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase font-sans">
+                  <div className="text-center font-bold mb-6 border-b-2 border-black pb-6">
+                    <h3 className="text-base tracking-tight uppercase">Solapur Education Society's Polytechnic, Solapur</h3>
+                    <h2 className="text-2xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">STUDENT SATISFACTION FEEDBACK</h2>
+                    <p className="mt-2 text-sm">Academic Year : {acadYear}</p>
+                  </div>
+                  
+                  <div className="mb-6 grid grid-cols-2 gap-4 text-sm font-bold px-2">
+                    <p>Department: {reportDept || "All Departments"}</p>
+                    <p className="text-right">Report Date: {new Date().toLocaleDateString("en-GB")}</p>
+                  </div>
+
+                  <table className="w-full text-[10px] border-collapse border-2 border-black text-center">
+                    <thead>
+                      <tr className="font-extrabold bg-slate-100 print:bg-transparent border-b-2 border-black">
+                        <th className="border border-black p-2 w-10">Sr. No.</th>
+                        <th className="border border-black p-2 text-left min-w-[200px]">Parameters</th>
+                        <th className="border border-black p-2 w-14">Excellent 5</th>
+                        <th className="border border-black p-2 w-14">Very good 4</th>
+                        <th className="border border-black p-2 w-14">Good 3</th>
+                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
+                        <th className="border border-black p-2 w-14">Average 1</th>
+                        <th className="border border-black p-2 w-14">Max. Marks</th>
+                        <th className="border border-black p-2 w-14">TOTAL</th>
+                        <th className="border border-black p-2 w-14">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        // Filter responses for institution feedback
+                        const instData = globalInstResponses.filter(r => 
+                          (!reportDept || r.department === reportDept) && 
+                          (!acadYear || r.academicYear === acadYear) &&
+                          (!reportYearLevel || r.yearLevel === reportYearLevel)
+                        );
+                        
+                        const respondentsCount = instData.length;
+                        
+                        return INSTITUTION_QUESTIONS.map((q, idx) => {
+                          const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+                          instData.forEach(r => {
+                            const val = parseInt(r.scores[idx]);
+                            if (counts[val] !== undefined) counts[val]++;
+                          });
+
+                          const totalScore = (counts[5]*5) + (counts[4]*4) + (counts[3]*3) + (counts[2]*2) + (counts[1]*1);
+                          const maxMarks = respondentsCount * 5;
+                          const percentage = maxMarks > 0 ? ((totalScore / maxMarks) * 100).toFixed(1) : "0.0";
+                          
+                          return (
+                            <tr key={idx} className="border-b border-black">
+                              <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
+                              <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">{q}</td>
+                              <td className="border border-black p-1.5">{counts[5]}</td>
+                              <td className="border border-black p-1.5">{counts[4]}</td>
+                              <td className="border border-black p-1.5">{counts[3]}</td>
+                              <td className="border border-black p-1.5">{counts[2]}</td>
+                              <td className="border border-black p-1.5">{counts[1]}</td>
+                              <td className="border border-black p-1.5 font-black">{maxMarks}</td>
+                              <td className="border border-black p-1.5 font-black">{totalScore}</td>
+                              <td className="border border-black p-1.5 font-black">{percentage}</td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+
+                  <div className="mt-20 flex justify-between items-end px-4 font-black text-sm print:mt-32">
+                    <div className="text-center">
+                       <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
+                       <p>Head of Department</p>
+                    </div>
+                    <div className="text-center">
+                       <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
+                       <p>Principal Signature</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           ) : reportDept && reportStaff ? (
             <div className="text-center py-20 opacity-30">
               <h2 className="text-2xl font-black uppercase text-purple-900">
-                No Data Available for {reportStaff}
+                {reportMode === "exit" && !reportSubject ? "Select a subject to view Course Exit Analytics" : `No Data Available for ${reportStaff}`}
               </h2>
             </div>
           ) : (
@@ -1255,6 +1609,41 @@ export default function AdminDashboard() {
             </Card>
           )}
         </div>
+      )}
+
+      {activeTab === "controls" && (
+        <Card className="max-w-3xl overflow-hidden p-0 border-amber-200">
+           <div className="border-b border-amber-100 bg-amber-50 px-6 py-4">
+             <h2 className="page-card-title flex items-center gap-3">
+               <Building2 size={20} className="text-amber-600" />
+               Global Institution Controls
+             </h2>
+             <p className="mt-1 text-sm text-slate-500">
+               Manage global settings for the annual institution-level satisfy survey.
+             </p>
+           </div>
+           <div className="p-6 md:p-8 space-y-6">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                 <h4 className="font-bold text-slate-900">Automation Active</h4>
+                 <p className="text-xs text-slate-500 mt-1">
+                   Academic Year and Semester are now automatically detected based on the calendar and student promotions.
+                 </p>
+              </div>
+              <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-200">
+                 <div>
+                    <h4 className="font-bold text-slate-900">Annual Portal Access</h4>
+                    <p className="text-xs text-slate-500">Enable students to fill the satisfaction survey</p>
+                 </div>
+                 <button
+                    onClick={handleToggleInstPortal}
+                    disabled={isSubmitting}
+                    className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${isInstPortalOpen ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                  >
+                    {isInstPortalOpen ? 'Save & Close Portal' : 'Save & Open Portal'}
+                  </button>
+              </div>
+           </div>
+        </Card>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import ReactDOM from "react-dom";
+import ReactDOM, { createPortal } from "react-dom";
 import {
   Users,
   BookOpen,
@@ -15,7 +15,6 @@ import {
   BarChart,
   Sparkles,
   ShieldCheck,
-  Building2,
   ChevronDown,
   CheckCircle,
   UserPlus,
@@ -23,6 +22,9 @@ import {
   Edit2,
   Filter,
   X,
+  RefreshCw,
+  ArrowUpCircle,
+  Building2,
 } from "lucide-react";
 import CustomSelect from "../components/UI/CustomSelect";
 import { Card } from "../components/UI";
@@ -39,6 +41,7 @@ import {
   getDoc,
   deleteDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import * as XLSX from "xlsx";
@@ -120,6 +123,11 @@ export default function HodDashboard({ user }) {
   const [semester, setSemester] = useState("");
   const [dynamicClassOptions, setDynamicClassOptions] = useState([]);
 
+  // -- Course Exit Survey States --
+  const [reportMode, setReportMode] = useState("faculty"); // "faculty" | "exit"
+  const [exitForms, setExitForms] = useState([]);
+  const [exitResponses, setExitResponses] = useState([]);
+
   // -- Directory Filter & Edit States --
   const [searchRollNo, setSearchRollNo] = useState("");
   const [filterClass, setFilterClass] = useState("");
@@ -133,6 +141,11 @@ export default function HodDashboard({ user }) {
     tClass: "",
     div: "",
   });
+
+  // -- Student Lifecycle States --
+  const [promoteSource, setPromoteSource] = useState("");
+  const [promoteTarget, setPromoteTarget] = useState("");
+  const [deleteClassTarget, setDeleteClassTarget] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -188,6 +201,21 @@ export default function HodDashboard({ user }) {
         .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
       setFeedbacks(fetchedFeedbacks);
       console.log("Fetched feedbacks:", fetchedFeedbacks);
+
+      // Fetch Course Exit Data
+      const exitFormsQ = query(
+        collection(db, "CourseExitForms"),
+        where("department", "==", user.dept)
+      );
+      const exitFormsSnap = await getDocs(exitFormsQ);
+      setExitForms(exitFormsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const exitRespQ = query(
+        collection(db, "CourseExitResponses"),
+        where("department", "==", user.dept)
+      );
+      const exitRespSnap = await getDocs(exitRespQ);
+      setExitResponses(exitRespSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
       // Fetch Allocations
       const allocQ = query(
@@ -572,11 +600,14 @@ export default function HodDashboard({ user }) {
     }
     return true;
   });
-  const reportData = feedbacks.filter(
-    (f) =>
-      f.staffName === reportStaff &&
-      (reportSubject === "" || f.subject === reportSubject),
-  );
+  const activeDataSource = reportMode === "exit" 
+    ? exitResponses 
+    : feedbacks;
+  
+  const reportData = activeDataSource.filter((f) => {
+    return f.staffName === reportStaff &&
+           (reportSubject === "" || f.subject === reportSubject);
+  });
   const totalStudents = reportData.length;
 
   // Calculate total students in class, submitted, and remaining
@@ -621,7 +652,18 @@ export default function HodDashboard({ user }) {
     studentsCount: students.length,
   });
 
-  const scoreCounts = Array.from({ length: FEEDBACK_QUESTIONS.length }, () => ({
+  // For Exit Surveys, we need the specific form to get the custom questions array
+  const activeExitForm = reportMode === "exit" && reportSubject 
+    ? exitForms.find(f => f.staffName === reportStaff && f.subject === reportSubject) 
+    : null;
+    
+  const activeQuestions = reportMode === "exit" 
+    ? (activeExitForm?.questions || []) 
+    : FEEDBACK_QUESTIONS;
+    
+  const qCount = activeQuestions.length;
+
+  const scoreCounts = Array.from({ length: qCount }, () => ({
     5: 0,
     4: 0,
     3: 0,
@@ -632,7 +674,7 @@ export default function HodDashboard({ user }) {
     reportData.forEach((fb) => {
       Object.keys(fb.scores).forEach((qIndex) => {
         const rating = parseInt(fb.scores[qIndex]);
-        if (scoreCounts[qIndex][rating] !== undefined)
+        if (scoreCounts[qIndex] && scoreCounts[qIndex][rating] !== undefined)
           scoreCounts[qIndex][rating]++;
       });
     });
@@ -642,7 +684,7 @@ export default function HodDashboard({ user }) {
   const colScores = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   let grandTotalScore = 0;
 
-  for (let i = 0; i < FEEDBACK_QUESTIONS.length; i++) {
+  for (let i = 0; i < qCount; i++) {
     [5, 4, 3, 2, 1].forEach((rating) => {
       colTotals[rating] += scoreCounts[i][rating];
       colScores[rating] += scoreCounts[i][rating] * rating;
@@ -650,7 +692,7 @@ export default function HodDashboard({ user }) {
     });
   }
 
-  const maxPossibleScore = totalStudents * FEEDBACK_QUESTIONS.length * 5;
+  const maxPossibleScore = totalStudents * qCount * 5;
   const marksOutOf25 =
     maxPossibleScore > 0
       ? ((grandTotalScore / maxPossibleScore) * 25).toFixed(2)
@@ -664,13 +706,88 @@ export default function HodDashboard({ user }) {
     ? allStaffList.filter((s) => s.dept === reportDept).map((s) => s.name)
     : allStaffList.map((s) => s.name);
 
+  const activeFormSource = reportMode === "exit" ? exitForms : feedbacks;
   const staffSubjects = [
     ...new Set(
-      feedbacks
+      [...feedbacks, ...exitForms]
         .filter((f) => f.staffName === reportStaff)
         .map((f) => f.subject),
     ),
   ];
+
+  // --- STUDENT LIFECYCLE HANDLERS ---
+  const handleBulkPromote = async () => {
+    if (!promoteSource || !promoteTarget) {
+      warning("Please select both source and target classes.");
+      return;
+    }
+    if (promoteSource === promoteTarget) {
+      warning("Source and target classes cannot be the same.");
+      return;
+    }
+
+    const studentsToPromote = students.filter(s => s.targetClass === promoteSource);
+    if (studentsToPromote.length === 0) {
+      warning(`No students found in ${promoteSource}.`);
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to promote ${studentsToPromote.length} students from ${promoteSource} to ${promoteTarget}? \n\nThis will instantly update their class in all directories and reports.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      studentsToPromote.forEach((std) => {
+        const docRef = doc(db, "Students", std.id);
+        batch.update(docRef, { 
+          targetClass: promoteTarget,
+          status: "pending" // Reset status for the new semester
+        });
+      });
+      await batch.commit();
+      success(`Successfully promoted ${studentsToPromote.length} students to ${promoteTarget}.`);
+      setPromoteSource("");
+      setPromoteTarget("");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      notifyError("Promotion failed. Please try again.");
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleBulkDeleteStudents = async () => {
+    if (!deleteClassTarget) {
+      warning("Please select a class to delete.");
+      return;
+    }
+
+    const studentsToDelete = students.filter(s => s.targetClass === deleteClassTarget);
+    if (studentsToDelete.length === 0) {
+      warning(`No students found in ${deleteClassTarget}.`);
+      return;
+    }
+
+    const confirmMsg = `⚠ DANGER: Are you sure you want to PERMANENTLY DELETE all ${studentsToDelete.length} students in ${deleteClassTarget}? \n\nThis cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      studentsToDelete.forEach((std) => {
+        batch.delete(doc(db, "Students", std.id));
+      });
+      await batch.commit();
+      success(`Deleted ${studentsToDelete.length} students from ${deleteClassTarget}.`);
+      setDeleteClassTarget("");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      notifyError("Deletion failed.");
+    }
+    setIsSubmitting(false);
+  };
 
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
@@ -734,7 +851,7 @@ export default function HodDashboard({ user }) {
             </div>
           </div>
           <div
-            className="flex flex-wrap justify-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/60 w-full xl:w-auto"
+            className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200/60 w-full xl:w-auto"
             role="tablist"
             aria-label="HOD sections"
           >
@@ -743,6 +860,7 @@ export default function HodDashboard({ user }) {
               { id: "directory", label: "Directory", icon: Users },
               { id: "subjects", label: "Manage Subjects", icon: BookOpen },
               { id: "allot", label: "Allot", icon: Link },
+              { id: "lifecycle", label: "Lifecycle", icon: RefreshCw },
               { id: "monitor", label: "Monitor", icon: Activity },
               { id: "reports", label: "Reports", icon: PieChart },
               { id: "controls", label: "Controls", icon: Settings },
@@ -753,8 +871,8 @@ export default function HodDashboard({ user }) {
                 role="tab"
                 aria-selected={activeTab === t.id}
                 onClick={() => setActiveTab(t.id)}
-                className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === t.id
-                    ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200 scale-100"
+                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap w-full ${activeTab === t.id
+                    ? "bg-white text-violet-700 shadow-md ring-1 ring-slate-200 scale-100"
                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
                   }`}
               >
@@ -954,6 +1072,89 @@ export default function HodDashboard({ user }) {
                     </button>
                   </div>
                 </form>
+              </Card>
+          </div>
+        )}
+
+        {activeTab === "lifecycle" && (
+          <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+             {/* Student Lifecycle Tools */}
+             <Card className="overflow-hidden border-orange-100 shadow-md">
+                <div className="bg-gradient-to-br from-orange-50 via-white to-amber-50/50 p-7 relative">
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-orange-200 shadow-sm">
+                      <RefreshCw className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
+                        Student Lifecycle Tools
+                      </h2>
+                      <p className="text-slate-500 text-sm mt-1 font-medium italic">
+                        "Each sem feedback must be isolated" — HOD
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Batch Promotion */}
+                    <div className="p-5 bg-white/60 rounded-2xl border border-orange-100 backdrop-blur-sm space-y-4">
+                      <h4 className="text-xs font-bold text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                        <ArrowUpCircle size={14} /> Smart Promotion (FY → SY → TY)
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-500 ml-1">SOURCE SEMESTER</span>
+                          <CustomSelect
+                            value={promoteSource}
+                            onChange={(val) => setPromoteSource(val)}
+                            options={dynamicClassOptions}
+                            placeholder="Current Sem"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-500 ml-1">TARGET SEMESTER</span>
+                          <CustomSelect
+                            value={promoteTarget}
+                            onChange={(val) => setPromoteTarget(val)}
+                            options={dynamicClassOptions}
+                            placeholder="Promote to..."
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleBulkPromote}
+                        disabled={isSubmitting || !promoteSource || !promoteTarget}
+                        className="w-full h-11 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-orange-200 active:scale-95"
+                      >
+                        {isSubmitting ? "Processing..." : "Promote Batch to Next Semester"}
+                      </button>
+                    </div>
+
+                    {/* Batch Deletion */}
+                    <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4">
+                      <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
+                        <Trash2 size={14} /> Graduation Cleanup
+                      </h4>
+                      <div className="flex gap-4">
+                        <div className="flex-1">
+                          <CustomSelect
+                            value={deleteClassTarget}
+                            onChange={(val) => setDeleteClassTarget(val)}
+                            options={dynamicClassOptions}
+                            placeholder="Select Graduated Batch"
+                          />
+                        </div>
+                        <button
+                          onClick={handleBulkDeleteStudents}
+                          disabled={isSubmitting || !deleteClassTarget}
+                          className="px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
+                        >
+                          Clear Batch
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </Card>
           </div>
         )}
@@ -1607,7 +1808,7 @@ export default function HodDashboard({ user }) {
                   Report Configuration
                 </h3>
               </div>
-              <div className="p-6 bg-white flex flex-wrap gap-5 items-center justify-between">
+              <div className="p-6 bg-white flex flex-wrap gap-5 items-end justify-between">
                 <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
                   <div className="flex-1 min-w-[120px]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
@@ -1665,7 +1866,7 @@ export default function HodDashboard({ user }) {
                         setReportStaff(val);
                         const nextSubjects = [
                           ...new Set(
-                            feedbacks
+                            [...feedbacks, ...exitForms]
                               .filter((f) => f.staffName === val)
                               .map((f) => f.subject),
                           ),
@@ -1685,7 +1886,7 @@ export default function HodDashboard({ user }) {
                   </div>
                   {reportStaff && (
                     <div className="flex-[2] min-w-[200px] animate-in fade-in duration-300 relative z-50">
-                      <label className="text-[10px] font-bold text-slate-400 mb-2 block uppercase tracking-widest">
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                         Subject
                       </label>
                       <CustomSelect
@@ -1699,6 +1900,7 @@ export default function HodDashboard({ user }) {
                       />
                     </div>
                   )}
+
                 </div>
                 <button
                   onClick={() => window.print()}
@@ -1709,7 +1911,24 @@ export default function HodDashboard({ user }) {
               </div>
             </Card>
 
-            {reportStaff && totalStudents > 0 ? (
+            <div className="flex justify-center mb-6 animate-in fade-in duration-500 mt-2">
+                 <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
+                    <button
+                      onClick={() => setReportMode("faculty")}
+                      className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      Faculty Feedback
+                    </button>
+                    <button
+                      onClick={() => setReportMode("exit")}
+                      className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      Course Exit Survey
+                    </button>
+                 </div>
+               </div>
+
+            {reportStaff && totalStudents > 0 && qCount > 0 ? (
               <>
                 {/* --- OVERALL RATING DONUT CHART (Hidden when printing) --- */}
                 <Card className="p-8 border-slate-100 shadow-sm print:hidden">
@@ -1724,7 +1943,7 @@ export default function HodDashboard({ user }) {
                         {totalStudentsInClass > 0
                           ? ` out of ${totalStudentsInClass} students`
                           : ""}{" "}
-                        and {FEEDBACK_QUESTIONS.length} criteria
+                        and {activeQuestions.length} criteria
                       </p>
                     </div>
                     <div className="text-right">
@@ -1766,7 +1985,7 @@ export default function HodDashboard({ user }) {
                     counts.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
-                    {FEEDBACK_QUESTIONS.map((q, idx) => (
+                    {activeQuestions.map((q, idx) => (
                       <div className="" key={idx}>
                         <QuestionDonutChart
                           questionNumber={idx + 1}
@@ -1780,6 +1999,7 @@ export default function HodDashboard({ user }) {
                 </div>
 
                 {/* --- OFFICIAL MSBTE K15 TABLE (Visible in browser AND in print mode) --- */}
+                {reportMode !== "exit" && (
                 <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0">
                   <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
                     <h3 className="text-sm">
@@ -1930,11 +2150,166 @@ export default function HodDashboard({ user }) {
                     </div>
                   </div>
                 </div>
+                )}
+
+                {reportMode === "exit" && (
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase">
+                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
+                    <h3 className="text-sm">
+                      Maharashtra State Board of Technical Education
+                    </h3>
+                    <h2 className="text-lg mt-1">COURSE EXIT SURVEY REPORT</h2>
+                  </div>
+                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
+                    <p>
+                      Institute Name: Solapur Education Society&#39;s Polytechnic,
+                      Solapur
+                    </p>
+                    <div className="border-t border-black my-2"></div>
+                    <div className="flex justify-between">
+                      <p>Course :- {reportSubject}</p>
+                      <p>Academic Year :- {acadYear}</p>
+                    </div>
+                    <div className="border-t border-black my-2"></div>
+                    <div className="flex justify-between">
+                      <p>Programme: {user.dept}</p>
+                      <p>Semester: {semester}</p>
+                      <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                    </div>
+                    <div className="border-t border-black my-2"></div>
+                    <p className="pt-2">
+                      Name Of The Faculty :- {reportStaff}
+                    </p>
+                  </div>
+                  <table className="w-full text-[11px] border-collapse border border-black text-center mt-4">
+                    <thead>
+                      <tr className="font-bold bg-slate-50 print:bg-transparent">
+                        <th className="border border-black p-2 w-10">Sr. No.</th>
+                        <th className="border border-black p-2 text-left">Parameters (Course Outcomes)</th>
+                        <th className="border border-black p-2 w-14">Excellent 5</th>
+                        <th className="border border-black p-2 w-14">Very good 4</th>
+                        <th className="border border-black p-2 w-14">Good 3</th>
+                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
+                        <th className="border border-black p-2 w-14">Average 1</th>
+                        <th className="border border-black p-2 w-14">Max. Marks</th>
+                        <th className="border border-black p-2 w-14">TOTAL</th>
+                        <th className="border border-black p-2 w-14">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeQuestions.map((q, idx) => {
+                        const rowTotal = (scoreCounts[idx][5] * 5) + (scoreCounts[idx][4] * 4) + (scoreCounts[idx][3] * 3) + (scoreCounts[idx][2] * 2) + (scoreCounts[idx][1] * 1);
+                        const rowMax = totalStudents * 5;
+                        const rowPerc = rowMax > 0 ? ((rowTotal / rowMax) * 100).toFixed(1) : "0.0";
+                        return (
+                          <tr key={idx}>
+                            <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
+                            <td className="border border-black p-1.5 text-left font-semibold">{q}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][5]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][4]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][3]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][2]}</td>
+                            <td className="border border-black p-1.5">{scoreCounts[idx][1]}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowMax}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowTotal}</td>
+                            <td className="border border-black p-1.5 font-bold">{rowPerc}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
+                    <div className="text-left border-black p-4">
+                      <p>Signature of HoD :- ________________</p>
+                      <p className="mt-4">Name :- {user.name}</p>
+                    </div>
+                  </div>
+                </div>
+                )}
+
+                {reportMode === "institution" && (
+                  <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase font-sans">
+                    <div className="text-center font-bold mb-6 border-b-2 border-black pb-6">
+                      <h3 className="text-sm tracking-tight uppercase">Solapur Education Society's Polytechnic, Solapur</h3>
+                      <h2 className="text-xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">STUDENT SATISFACTION FEEDBACK</h2>
+                      <p className="mt-2 text-sm italic">Annual Institutional Survey • {user.dept} Dept</p>
+                    </div>
+                    
+                    <div className="mb-6 grid grid-cols-2 gap-4 text-sm font-bold px-2">
+                       <p>Academic Year : {acadYear}</p>
+                       <p className="text-right">Report Date: {new Date().toLocaleDateString("en-GB")}</p>
+                    </div>
+
+                    <table className="w-full text-[10px] border-collapse border-2 border-black text-center">
+                      <thead>
+                        <tr className="font-extrabold bg-slate-100 print:bg-transparent border-b-2 border-black">
+                          <th className="border border-black p-2 w-10 text-[11px]">Sr. No.</th>
+                          <th className="border border-black p-2 text-left min-w-[200px] text-[11px]">Parameters</th>
+                          <th className="border border-black p-2 w-14">Excellent 5</th>
+                          <th className="border border-black p-2 w-14">Very good 4</th>
+                          <th className="border border-black p-2 w-14">Good 3</th>
+                          <th className="border border-black p-2 w-14">Satisfactory 2</th>
+                          <th className="border border-black p-2 w-14">Average 1</th>
+                          <th className="border border-black p-2 w-14">Max. Marks</th>
+                          <th className="border border-black p-2 w-14">TOTAL</th>
+                          <th className="border border-black p-2 w-14">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          // Filter responses for institution feedback (department specific for HOD)
+                          const instData = instResponses.filter(r => 
+                            r.department === user.dept && 
+                            (!acadYear || r.academicYear === acadYear)
+                          );
+                          
+                          const respondentsCount = instData.length;
+                          
+                          return INSTITUTION_QUESTIONS.map((q, idx) => {
+                            const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+                            instData.forEach(r => {
+                              const val = parseInt(r.scores[idx]);
+                              if (counts[val] !== undefined) counts[val]++;
+                            });
+
+                            const totalScore = (counts[5]*5) + (counts[4]*4) + (counts[3]*3) + (counts[2]*2) + (counts[1]*1);
+                            const maxMarks = respondentsCount * 5;
+                            const percentage = maxMarks > 0 ? ((totalScore / maxMarks) * 100).toFixed(1) : "0.0";
+                            
+                            return (
+                              <tr key={idx} className="border-b border-black">
+                                <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
+                                <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">{q}</td>
+                                <td className="border border-black p-1.5">{counts[5]}</td>
+                                <td className="border border-black p-1.5">{counts[4]}</td>
+                                <td className="border border-black p-1.5">{counts[3]}</td>
+                                <td className="border border-black p-1.5">{counts[2]}</td>
+                                <td className="border border-black p-1.5">{counts[1]}</td>
+                                <td className="border border-black p-1.5 font-black">{maxMarks}</td>
+                                <td className="border border-black p-1.5 font-black">{totalScore}</td>
+                                <td className="border border-black p-1.5 font-black">{percentage}</td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+
+                    <div className="mt-20 flex justify-end pr-12 font-black text-sm print:mt-32">
+                      <div className="text-center">
+                         <div className="w-56 border-b-2 border-dotted border-black mb-1"></div>
+                         <p>Department Head Signature</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
 
                 {/* --- K15 REPORT VISUALIZATION (Admin style charts - Hidden when printing) --- */}
                 <div className="mt-12 print:hidden mb-12">
                   <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
-                    <PieChart size={24} /> K-15 Report Visualization
+                    <PieChart size={24} /> {reportMode === "exit" ? "Course Exit Analytics" : "K-15 Report Visualization"}
                   </h2>
                   <div className="grid md:grid-cols-3 gap-6">
                     <Card className="md:col-span-1 p-8 flex flex-col items-center justify-center border-indigo-100">
@@ -1988,7 +2363,7 @@ export default function HodDashboard({ user }) {
                           </>
                         )}
                       </div>
-                      <div className="w-full h-[320px]">
+                      <div className="w-full relative">
                         <DonutChart
                           data={[
                             { name: "Excellent (5)", value: colTotals[5] },
@@ -2021,8 +2396,8 @@ export default function HodDashboard({ user }) {
                           </span>
                         </h2>
                       </div>
-                      <div className="space-y-4 max-h-[400px] overflow-y-auto pr-4">
-                        {FEEDBACK_QUESTIONS.map((q, idx) => {
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-4">
+                        {activeQuestions.map((q, idx) => {
                           const qTotalScore =
                             scoreCounts[idx][5] * 5 +
                             scoreCounts[idx][4] * 4 +
@@ -2033,21 +2408,24 @@ export default function HodDashboard({ user }) {
                             1,
                           );
                           const widthPercent = (qAvg / 5) * 100;
+                          const numAvg = parseFloat(qAvg);
                           const barColor =
-                            qAvg >= 4.0
+                            numAvg >= 4.5
                               ? "bg-green-500"
-                              : qAvg >= 3.0
+                              : numAvg >= 3.5
                                 ? "bg-blue-500"
-                                : qAvg >= 2.0
+                                : numAvg >= 2.5
                                   ? "bg-yellow-500"
-                                  : "bg-red-500";
+                                  : numAvg >= 1.5
+                                    ? "bg-orange-500"
+                                    : "bg-red-500";
                           return (
                             <div key={idx} className="relative">
-                              <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-                                <span className="truncate w-3/4">
+                              <div className="flex justify-between items-start text-xs md:text-[13px] font-bold text-slate-700 mb-1.5 gap-4">
+                                <span className="leading-snug">
                                   {idx + 1}. {q}
                                 </span>
-                                <span>{qAvg}</span>
+                                <span className="shrink-0 font-black text-slate-800">{qAvg}</span>
                               </div>
                               <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                                 <div
@@ -2066,7 +2444,7 @@ export default function HodDashboard({ user }) {
             ) : reportStaff ? (
               <div className="text-center py-20 opacity-30">
                 <h2 className="text-2xl font-black uppercase">
-                  No Data Available
+                  {reportMode === "exit" && !reportSubject ? "Select a subject to view Course Exit Analytics" : "No Data Available"}
                 </h2>
               </div>
             ) : (

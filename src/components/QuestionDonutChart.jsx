@@ -8,23 +8,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const DonutTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    const { name, value, percent } = payload[0];
-    return (
-      <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
-        <p className="font-bold text-sm">{name}</p>
-        <p className="text-xs font-semibold text-blue-300">
-          Responses: {value}
-        </p>
-        <p className="text-xs font-semibold text-emerald-300">
-          {(percent * 100).toFixed(1)}%
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
 
 const DonutLabel = ({
   cx,
@@ -116,7 +99,9 @@ export default function QuestionDonutChart({
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
-      const { name, value, percent } = payload[0];
+      const { name, value } = payload[0];
+      const total = chartData.reduce((sum, d) => sum + d.value, 0);
+      const percent = total > 0 ? (value / total) * 100 : 0;
       return (
         <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
           <p className="font-bold text-sm">{name}</p>
@@ -124,7 +109,7 @@ export default function QuestionDonutChart({
             Responses: {value}
           </p>
           <p className="text-xs font-semibold text-emerald-300">
-            {(percent * 100).toFixed(1)}%
+            {percent.toFixed(1)}%
           </p>
         </div>
       );
@@ -199,7 +184,7 @@ export default function QuestionDonutChart({
               <Cell key={`cell-${idx}`} fill={COLORS[entry.rating]} />
             ))}
           </Pie>
-          <Tooltip content={<DonutTooltip />} />
+          <Tooltip content={<CustomTooltip />} />
         </PieChart>
       </ResponsiveContainer>
 

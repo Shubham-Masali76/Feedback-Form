@@ -8,6 +8,8 @@ import {
   Loader2,
   UserCircle,
   KeyRound,
+  Users,
+  ShieldCheck,
 } from "lucide-react";
 
 // Import your pages
@@ -41,6 +43,7 @@ export default function App() {
   const [loginView, setLoginView] = useState("");
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [firebaseAuthUser, setFirebaseAuthUser] = useState(null);
+  const [viewMode, setViewMode] = useState("hod"); // Default to personal HOD view
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => setFirebaseAuthUser(u));
@@ -222,7 +225,7 @@ export default function App() {
             FB
           </div>
           <div className="min-w-0">
-            <h1 className="font-extrabold tracking-tight text-slate-900 text-lg sm:text-xl leading-tight truncate">
+            <h1 className="font-extrabold tracking-tight bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent text-lg sm:text-xl leading-tight truncate">
               Feedback Portal
             </h1>
             <h2 className="text-xs text-slate-500 font-medium truncate">
@@ -232,6 +235,30 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+          {user?.role === "hod" && (
+            <button
+              type="button"
+              onClick={() => setViewMode(viewMode === "hod" ? "staff" : "hod")}
+              className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border transition-all ${
+                viewMode === "hod"
+                  ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              }`}
+            >
+              {viewMode === "hod" ? (
+                <>
+                  <Users size={16} strokeWidth={2.5} />
+                  Switch to Faculty Mode
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={16} strokeWidth={2.5} />
+                  Back to HOD Mode
+                </>
+              )}
+            </button>
+          )}
+
           {firebaseAuthUser && user?.role !== "student" && (
             <button
               type="button"
@@ -269,7 +296,9 @@ export default function App() {
       <main className="p-4 md:p-8 max-w-7xl mx-auto pb-12">
         {user.role === "admin" && <AdminDashboard user={user} />}
         {user.role === "student" && <StudentDashboard user={user} />}
-        {user.role === "hod" && <HodDashboard user={user} />}
+        {user.role === "hod" && (
+          viewMode === "hod" ? <HodDashboard user={user} /> : <StaffDashboard user={user} />
+        )}
         {user.role === "staff" && <StaffDashboard user={user} />}
       </main>
 
