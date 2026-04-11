@@ -122,7 +122,10 @@ export default function CustomSelect({
             className={`custom-select-portal animate-in fade-in zoom-in-95 duration-200 max-h-64 overflow-y-auto rounded-xl border p-1.5 ${dropdownTheme}`}
             style={dropdownStyle}
           >
-            {(options.length === 0 || options.every(opt => opt.group && opt.options.length === 0)) && (
+            {(options.length === 0 ||
+              options.every(
+                (opt) => opt.group && opt.options.length === 0,
+              )) && (
               <div
                 className={`p-3 text-center text-xs font-bold ${isDark ? "text-slate-500" : "text-slate-400"}`}
               >
@@ -188,9 +191,7 @@ function OptionItem({ option, selectedValue, onSelect, isDark }) {
         isSelected ? selectedClass : hoverClass
       }`}
     >
-      <span className="whitespace-nowrap pr-2">
-        {option.label}
-      </span>
+      <span className="whitespace-nowrap pr-2">{option.label}</span>
       {isSelected && (
         <Check
           size={16}

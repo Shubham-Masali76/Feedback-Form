@@ -193,14 +193,24 @@ export default function StudentLogin({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/60 bg-white/90 shadow-xl shadow-indigo-950/10 ring-1 ring-slate-200/50 backdrop-blur-md">
-        <div className={`relative overflow-hidden bg-gradient-to-r ${loginView === "" ? "from-slate-700 via-slate-800 to-indigo-900" : "from-blue-600 via-indigo-600 to-cyan-600"} px-4 py-3.5 sm:px-5`}>
+        <div
+          className={`relative overflow-hidden bg-gradient-to-r ${loginView === "" ? "from-slate-700 via-slate-800 to-indigo-900" : "from-blue-600 via-indigo-600 to-cyan-600"} px-4 py-3.5 sm:px-5`}
+        >
           <div className="relative flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
               {step === 1 ? (
                 loginView === "" ? (
-                  <UserCircle className="text-white" size={22} strokeWidth={2} />
+                  <UserCircle
+                    className="text-white"
+                    size={22}
+                    strokeWidth={2}
+                  />
                 ) : (
-                  <GraduationCap className="text-white" size={22} strokeWidth={2} />
+                  <GraduationCap
+                    className="text-white"
+                    size={22}
+                    strokeWidth={2}
+                  />
                 )
               ) : (
                 <Mail className="text-white" size={22} strokeWidth={2} />
@@ -214,7 +224,11 @@ export default function StudentLogin({
                 </p>
               )}
               <h2 className="font-display truncate text-lg font-extrabold tracking-tight text-white">
-                {step === 1 ? (loginView === "" ? "User sign-in" : "Student sign-in") : "Enter OTP"}
+                {step === 1
+                  ? loginView === ""
+                    ? "User sign-in"
+                    : "Student sign-in"
+                  : "Enter OTP"}
               </h2>
               {loginView !== "" && (
                 <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-blue-50/95">
@@ -322,7 +336,7 @@ export default function StudentLogin({
               </div>
             </div>
           )}
-          
+
           {step === 2 && (
             <form onSubmit={handleVerifyOTP} className="space-y-3">
               <div>

@@ -8,7 +8,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-
 const DonutLabel = ({
   cx,
   cy,
@@ -22,24 +21,24 @@ const DonutLabel = ({
   const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
   const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
 
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="#ffffff"
-        stroke="rgba(0,0,0,0.8)"
-        strokeWidth="3"
-        paintOrder="stroke"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-sm font-black"
-        style={{
-          filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
-        }}
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      stroke="rgba(0,0,0,0.8)"
+      strokeWidth="3"
+      paintOrder="stroke"
+      textAnchor="middle"
+      dominantBaseline="central"
+      className="text-sm font-black"
+      style={{
+        filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
+      }}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
 };
 
 /**

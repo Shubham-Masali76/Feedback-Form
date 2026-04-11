@@ -8,8 +8,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-
-
 const DonutLabel = ({
   cx,
   cy,
@@ -23,24 +21,24 @@ const DonutLabel = ({
   const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
   const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
 
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="#ffffff"
-        stroke="rgba(0,0,0,0.8)"
-        strokeWidth="3"
-        paintOrder="stroke"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-sm font-black"
-        style={{
-          filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
-        }}
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#ffffff"
+      stroke="rgba(0,0,0,0.8)"
+      strokeWidth="3"
+      paintOrder="stroke"
+      textAnchor="middle"
+      dominantBaseline="central"
+      className="text-sm font-black"
+      style={{
+        filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
+      }}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
 };
 
 /**
@@ -129,11 +127,19 @@ export default function DonutChart({
     return (
       <ul className="flex flex-wrap justify-center gap-x-5 gap-y-3 mt-2 px-4 pb-2 w-full">
         {displayData.map((item, index) => {
-          const percent = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
-          const color = item.color || colors[item.originalIndex % colors.length];
+          const percent =
+            totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
+          const color =
+            item.color || colors[item.originalIndex % colors.length];
           return (
-            <li key={`item-${index}`} className="flex items-center text-sm text-slate-700 font-semibold gap-2">
-              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
+            <li
+              key={`item-${index}`}
+              className="flex items-center text-sm text-slate-700 font-semibold gap-2"
+            >
+              <span
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{ backgroundColor: color }}
+              />
               <span>{`${item.name}: ${item.value} (${percent}%)`}</span>
             </li>
           );

@@ -36,7 +36,10 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { db, secondaryAuth } from "../firebase";
-import { FEEDBACK_QUESTIONS, INSTITUTION_QUESTIONS } from "../constants/feedbackQuestions";
+import {
+  FEEDBACK_QUESTIONS,
+  INSTITUTION_QUESTIONS,
+} from "../constants/feedbackQuestions";
 import { useNotify } from "../context/NotificationContext.jsx";
 
 function firestoreErrorMessage(error, hint = "") {
@@ -110,7 +113,7 @@ export default function AdminDashboard() {
 
   const [globalExitForms, setGlobalExitForms] = useState([]);
   const [globalExitResponses, setGlobalExitResponses] = useState([]);
-  
+
   const [globalInstResponses, setGlobalInstResponses] = useState([]);
   const [isInstPortalOpen, setIsInstPortalOpen] = useState(false);
 
@@ -134,10 +137,14 @@ export default function AdminDashboard() {
       setGlobalFeedbacks(feedSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
 
       const exitFormsSnap = await getDocs(collection(db, "CourseExitForms"));
-      setGlobalExitForms(exitFormsSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      setGlobalExitForms(
+        exitFormsSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
+      );
 
       const exitResSnap = await getDocs(collection(db, "CourseExitResponses"));
-      setGlobalExitResponses(exitResSnap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      setGlobalExitResponses(
+        exitResSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
+      );
 
       const schemeSnap = await getDocs(collection(db, "Schemes"));
       setSchemesList(schemeSnap.docs.map((d) => d.data().name));
@@ -155,8 +162,12 @@ export default function AdminDashboard() {
         if (data.semester) setSemester(data.semester);
       }
 
-      const instSnap = await getDocs(collection(db, "InstitutionFeedbackResponses"));
-      setGlobalInstResponses(instSnap.docs.map(d => ({ ...d.data(), id: d.id })));
+      const instSnap = await getDocs(
+        collection(db, "InstitutionFeedbackResponses"),
+      );
+      setGlobalInstResponses(
+        instSnap.docs.map((d) => ({ ...d.data(), id: d.id })),
+      );
     } catch (err) {
       console.error("Error fetching global data:", err);
     }
@@ -364,20 +375,21 @@ export default function AdminDashboard() {
         institutionPortalOpen: newStatus,
       });
       setIsInstPortalOpen(newStatus);
-      success(`Institution Feedback Portal ${newStatus ? 'Opened' : 'Closed'}`);
+      success(`Institution Feedback Portal ${newStatus ? "Opened" : "Closed"}`);
     } catch (error) {
-       console.error(error);
-       notifyError("Failed to toggle portal.");
+      console.error(error);
+      notifyError("Failed to toggle portal.");
     }
     setIsSubmitting(false);
   };
 
   // --- REPORT ENGINE CALCULATIONS ---
-  const activeDataSource = reportMode === "exit" 
-    ? globalExitResponses 
-    : reportMode === "institution" 
-      ? globalInstResponses 
-      : globalFeedbacks;
+  const activeDataSource =
+    reportMode === "exit"
+      ? globalExitResponses
+      : reportMode === "institution"
+        ? globalInstResponses
+        : globalFeedbacks;
 
   const reportData = activeDataSource.filter((f) => {
     const matchDept = !reportDept || f.department === reportDept;
@@ -391,14 +403,21 @@ export default function AdminDashboard() {
   });
   const totalStudents = reportData.length;
 
-  const activeExitForm = reportMode === "exit" && reportSubject
-    ? globalExitForms.find(f => f.staffName === reportStaff && f.subject === reportSubject && f.department === reportDept)
-    : null;
-  const activeQuestions = reportMode === "exit" 
-    ? (activeExitForm?.questions || []) 
-    : reportMode === "institution" 
-      ? INSTITUTION_QUESTIONS 
-      : FEEDBACK_QUESTIONS;
+  const activeExitForm =
+    reportMode === "exit" && reportSubject
+      ? globalExitForms.find(
+          (f) =>
+            f.staffName === reportStaff &&
+            f.subject === reportSubject &&
+            f.department === reportDept,
+        )
+      : null;
+  const activeQuestions =
+    reportMode === "exit"
+      ? activeExitForm?.questions || []
+      : reportMode === "institution"
+        ? INSTITUTION_QUESTIONS
+        : FEEDBACK_QUESTIONS;
   const qCount = activeQuestions.length;
 
   const scoreCounts = Array.from({ length: qCount }, () => ({
@@ -457,13 +476,16 @@ export default function AdminDashboard() {
     .filter((s) => s.dept === reportDept && s.active !== false)
     .map((s) => s.name);
 
-  const activeFormSource = reportMode === "exit" ? globalExitForms : globalFeedbacks;
+  const activeFormSource =
+    reportMode === "exit" ? globalExitForms : globalFeedbacks;
   const staffSubjects = [
     ...new Set(
       [...globalFeedbacks, ...globalExitForms]
-        .filter((f) => f.staffName === reportStaff && f.department === reportDept)
-        .map((f) => f.subject)
-    )
+        .filter(
+          (f) => f.staffName === reportStaff && f.department === reportDept,
+        )
+        .map((f) => f.subject),
+    ),
   ];
 
   const staffAccounts = globalStaffList
@@ -474,24 +496,30 @@ export default function AdminDashboard() {
       if (a.role !== "hod" && b.role === "hod") return 1;
       return a.name.localeCompare(b.name);
     });
-  
+
   // Filtered Logic for Staff Directory
   const matchesSearchAndDept = (u) => {
     return filterStaffDept === "" || u.dept === filterStaffDept;
   };
 
-  const activeStaffRows = staffAccounts.filter((u) => u.active !== false && matchesSearchAndDept(u));
-  const inactiveStaffRows = staffAccounts.filter((u) => u.active === false && matchesSearchAndDept(u));
+  const activeStaffRows = staffAccounts.filter(
+    (u) => u.active !== false && matchesSearchAndDept(u),
+  );
+  const inactiveStaffRows = staffAccounts.filter(
+    (u) => u.active === false && matchesSearchAndDept(u),
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white/80 p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden backdrop-blur-xl">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white/80 p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden backdrop-blur-xl print:hidden print-hide">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-200">
             <Building2 size={24} strokeWidth={2} />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Admin Portal</h1>
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+              Admin Portal
+            </h1>
             <h2 className="text-sm font-medium text-slate-500 mt-0.5">
               SES Polytechnic Solapur
             </h2>
@@ -502,31 +530,38 @@ export default function AdminDashboard() {
           role="tablist"
           aria-label="Admin sections"
         >
-          {["departments", "hods", "schemes", "staff", "directory", "feedback", "controls"].map(
-            (tab) => {
-              let label = tab;
-              if (tab === "feedback") label = "Reports";
-              else if (tab === "hods") label = "HODs";
-              else if (tab === "directory") label = "Faculty List";
-              else label = tab.charAt(0).toUpperCase() + tab.slice(1);
+          {[
+            "departments",
+            "hods",
+            "schemes",
+            "staff",
+            "directory",
+            "feedback",
+            "controls",
+          ].map((tab) => {
+            let label = tab;
+            if (tab === "feedback") label = "Reports";
+            else if (tab === "hods") label = "HODs";
+            else if (tab === "directory") label = "Faculty List";
+            else label = tab.charAt(0).toUpperCase() + tab.slice(1);
 
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === tab
-                      ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200 scale-100"
-                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
-                    }`}
-                >
-                  {label}
-                </button>
-              );
-            },
-          )}
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                  activeTab === tab
+                    ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200 scale-100"
+                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -808,15 +843,21 @@ export default function AdminDashboard() {
                   <UserPlus size={24} />
                 </span>
                 <span className="flex flex-col text-left">
-                  <span className="text-sm font-bold text-slate-900 tracking-tight">Add faculty (staff)</span>
-                  <span className="text-[11px] font-medium text-slate-500 mt-0.5 uppercase tracking-wider">New access account</span>
+                  <span className="text-sm font-bold text-slate-900 tracking-tight">
+                    Add faculty (staff)
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-500 mt-0.5 uppercase tracking-wider">
+                    New access account
+                  </span>
                 </span>
               </h2>
             </div>
             <form onSubmit={handleCreateStaff} className="p-6 md:p-10">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
                 <div>
-                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Full name</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">
+                    Full name
+                  </label>
                   <input
                     type="text"
                     placeholder="Faculty name"
@@ -827,7 +868,9 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Department</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">
+                    Department
+                  </label>
                   <CustomSelect
                     value={staffDept}
                     onChange={(val) => setStaffDept(val)}
@@ -839,7 +882,9 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">Email</label>
+                  <label className="section-title mb-2.5 block text-slate-700 font-bold uppercase tracking-tight text-[11px]">
+                    Email
+                  </label>
                   <input
                     type="email"
                     placeholder="staff@college.edu"
@@ -884,7 +929,8 @@ export default function AdminDashboard() {
                     <UserCheck size={14} strokeWidth={3} />
                   </div>
                   <p className="text-xs font-bold text-slate-500 leading-relaxed max-w-[400px]">
-                    Once saved, the faculty member can immediately log in and will be available for subject allotments by their HOD.
+                    Once saved, the faculty member can immediately log in and
+                    will be available for subject allotments by their HOD.
                   </p>
                 </div>
                 <button
@@ -926,7 +972,10 @@ export default function AdminDashboard() {
                   <CustomSelect
                     value={filterStaffDept}
                     onChange={(val) => setFilterStaffDept(val)}
-                    options={departmentsList.map((d) => ({ value: d, label: d }))}
+                    options={departmentsList.map((d) => ({
+                      value: d,
+                      label: d,
+                    }))}
                     placeholder="Select Department"
                   />
                 </div>
@@ -934,24 +983,36 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className={`px-6 md:px-10 py-6 md:py-8 ${!filterStaffDept ? 'space-y-4' : 'space-y-8'} ${!filterStaffDept ? 'bg-slate-50/30' : 'bg-white'}`}>
+          <div
+            className={`px-6 md:px-10 py-6 md:py-8 ${!filterStaffDept ? "space-y-4" : "space-y-8"} ${!filterStaffDept ? "bg-slate-50/30" : "bg-white"}`}
+          >
             <div className="rounded-2xl bg-blue-50/50 border border-blue-100 p-5 flex items-start gap-4 shadow-sm">
               <div className="h-8 w-8 shrink-0 flex items-center justify-center rounded-xl bg-blue-100 text-blue-600">
                 <Shield size={18} />
               </div>
               <p className="text-xs leading-relaxed text-blue-800 font-semibold max-w-4xl">
-                Manage your department's faculty accounts here. Deactivated faculty will lose access immediately and disappear from HOD allotments, but their historical data remains preserved for reports.
+                Manage your department's faculty accounts here. Deactivated
+                faculty will lose access immediately and disappear from HOD
+                allotments, but their historical data remains preserved for
+                reports.
               </p>
             </div>
 
             {!filterStaffDept ? (
               <div className="flex flex-col items-center justify-center py-6 px-4 text-center">
                 <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[2.5rem] bg-white shadow-soft-2xl border border-slate-100 text-slate-200 group hover:scale-110 transition-transform duration-500">
-                  <Building2 size={48} strokeWidth={1} className="group-hover:text-violet-200 transition-colors" />
+                  <Building2
+                    size={48}
+                    strokeWidth={1}
+                    className="group-hover:text-violet-200 transition-colors"
+                  />
                 </div>
-                <h3 className="text-xl font-black text-slate-800 tracking-tight">Account Directory Empty</h3>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  Account Directory Empty
+                </h3>
                 <p className="mt-2.5 max-w-[320px] text-sm text-slate-500 font-semibold leading-relaxed">
-                  Please select a department from the dropdown to view and manage its faculty personnel.
+                  Please select a department from the dropdown to view and
+                  manage its faculty personnel.
                 </p>
               </div>
             ) : (
@@ -979,18 +1040,24 @@ export default function AdminDashboard() {
                         >
                           <div className="min-w-0 flex-1 flex items-center gap-4">
                             <div className="h-12 w-12 shrink-0 flex items-center justify-center rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 group-hover:from-violet-50 group-hover:to-violet-100 group-hover:text-violet-600 transition-all shadow-sm">
-                              {row.role === "hod" ? <Shield size={22} /> : <Users size={22} />}
+                              {row.role === "hod" ? (
+                                <Shield size={22} />
+                              ) : (
+                                <Users size={22} />
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-black text-slate-900 group-hover:text-violet-700 transition-colors truncate">
                                 {row.name}
                               </p>
                               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                                <span className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-black ring-1 ${
-                                  row.role === "hod" 
-                                  ? "bg-amber-50 text-amber-700 ring-amber-200" 
-                                  : "bg-violet-50 text-violet-700 ring-violet-200"
-                                }`}>
+                                <span
+                                  className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-black ring-1 ${
+                                    row.role === "hod"
+                                      ? "bg-amber-50 text-amber-700 ring-amber-200"
+                                      : "bg-violet-50 text-violet-700 ring-violet-200"
+                                  }`}
+                                >
                                   {row.role === "hod" ? "HOD" : "STAFF"}
                                 </span>
                                 <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
@@ -1000,18 +1067,20 @@ export default function AdminDashboard() {
                               </div>
                             </div>
                           </div>
-                            <div className="shrink-0 flex items-center gap-2">
-                              <button
-                                type="button"
-                                disabled={isSubmitting}
-                                onClick={() => handleDeactivateStaff(row.id, row.name)}
-                                className="h-10 px-4 flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 text-[11px] font-black text-red-600 hover:bg-red-600 hover:text-white hover:shadow-lg hover:shadow-red-200 transition-all active:scale-95 uppercase tracking-wider"
-                                title="Deactivate Account"
-                              >
-                                <UserX size={16} strokeWidth={2.5} />
-                                <span>Deactivate Account</span>
-                              </button>
-                            </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() =>
+                                handleDeactivateStaff(row.id, row.name)
+                              }
+                              className="h-10 px-4 flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 text-[11px] font-black text-red-600 hover:bg-red-600 hover:text-white hover:shadow-lg hover:shadow-red-200 transition-all active:scale-95 uppercase tracking-wider"
+                              title="Deactivate Account"
+                            >
+                              <UserX size={16} strokeWidth={2.5} />
+                              <span>Deactivate Account</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1039,8 +1108,12 @@ export default function AdminDashboard() {
                                 {row.name}
                               </p>
                               <p className="text-[10px] font-semibold text-slate-400 mt-1 flex items-center gap-1.5 uppercase tracking-tighter">
-                                <span className="font-black text-slate-500">{row.role}</span>
-                                <span className="text-slate-200 inline-block">|</span>
+                                <span className="font-black text-slate-500">
+                                  {row.role}
+                                </span>
+                                <span className="text-slate-200 inline-block">
+                                  |
+                                </span>
                                 {row.email}
                               </p>
                             </div>
@@ -1049,7 +1122,9 @@ export default function AdminDashboard() {
                             <button
                               type="button"
                               disabled={isSubmitting}
-                              onClick={() => handleReactivateStaff(row.id, row.name)}
+                              onClick={() =>
+                                handleReactivateStaff(row.id, row.name)
+                              }
                               className="h-9 px-4 flex items-center justify-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 text-[10px] font-black text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all active:scale-95"
                             >
                               <RotateCcw size={14} strokeWidth={3} />
@@ -1101,7 +1176,11 @@ export default function AdminDashboard() {
                     type="text"
                     maxLength={3}
                     value={semester}
-                    onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
+                    onChange={(e) =>
+                      setSemester(
+                        e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
+                      )
+                    }
                     className="input-app py-2.5 text-sm font-bold px-4"
                     placeholder="e.g. VI"
                   />
@@ -1160,39 +1239,47 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-                <button
-                  onClick={() => window.print()}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto mt-4 xl:mt-0"
-                >
-                  <Printer size={18} strokeWidth={2.5} /> Print Report
-                </button>
+              <button
+                onClick={() => {
+                  if (!acadYear || !semester) {
+                    notifyError("Academic Year and Semester are required before printing.");
+                    return;
+                  }
+                  window.print();
+                }}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto mt-4 xl:mt-0"
+              >
+                <Printer size={18} strokeWidth={2.5} /> Print Report
+              </button>
             </div>
           </Card>
 
-          <div className="flex justify-center mb-6 animate-in fade-in duration-500 mt-2">
-              <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
-                <button
-                  onClick={() => setReportMode("faculty")}
-                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
-                >
-                  Faculty Feedback
-                </button>
-                <button
-                  onClick={() => setReportMode("exit")}
-                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
-                >
-                  Course Exit Survey
-                </button>
-                <button
-                  onClick={() => setReportMode("institution")}
-                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "institution" ? "bg-amber-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
-                >
-                  Institution Feedback
-                </button>
-              </div>
+          <div className="flex justify-center mb-6 mt-2 print:hidden print-hide" style={{ "@media print": { display: "none" } }}>
+            <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
+              <button
+                onClick={() => setReportMode("faculty")}
+                className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                Faculty Feedback
+              </button>
+              <button
+                onClick={() => setReportMode("exit")}
+                className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                Course Exit Survey
+              </button>
+              <button
+                onClick={() => setReportMode("institution")}
+                className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "institution" ? "bg-amber-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                Institution Feedback
+              </button>
             </div>
+          </div>
 
-          {(reportMode === "institution" || (reportDept && reportStaff)) && totalStudents > 0 && qCount > 0 ? (
+          {(reportMode === "institution" || (reportDept && reportStaff)) &&
+          totalStudents > 0 &&
+          qCount > 0 ? (
             <>
               {/* --- VISUAL CHARTS (Hidden when printing) --- */}
               <div className="grid md:grid-cols-3 gap-6 mb-8 mt-4 print:hidden">
@@ -1275,7 +1362,9 @@ export default function AdminDashboard() {
                             <span className="leading-snug">
                               {idx + 1}. {q}
                             </span>
-                            <span className="shrink-0 font-black text-slate-800">{qAvg}</span>
+                            <span className="shrink-0 font-black text-slate-800">
+                              {qAvg}
+                            </span>
                           </div>
                           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                             <div
@@ -1292,36 +1381,36 @@ export default function AdminDashboard() {
 
               {/* --- OFFICIAL MSBTE K15 TABLE (Printable) --- */}
               {reportMode !== "exit" && (
-                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0">
-                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0">
+                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
                     <h3 className="text-sm">
                       Maharashtra State Board of Technical Education
                     </h3>
                     <h2 className="text-lg mt-1">STUDENT FEEDBACK</h2>
-                    <p className="absolute right-8 top-8 font-bold text-sm">
+                    <p className="absolute right-0 top-0 font-bold text-sm">
                       K15
                     </p>
                   </div>
-                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
+                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4 print:pb-2 print:mb-2 print:space-y-1">
                     <p>
                       Institute Name: Solapur Education Society's Polytechnic,
                       Solapur
                     </p>
-                    <div className="border-t border-black my-2"></div>
+                    <div className="border-t border-black my-2 print:my-0.5"></div>
                     <p>Academic Year :- {acadYear}</p>
-                    <div className="border-t border-black my-2"></div>
+                    <div className="border-t border-black my-2 print:my-0.5"></div>
                     <div className="flex justify-between">
                       <p>Programme: {reportDept}</p>
                       <p>Semester: {semester}</p>
                       <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
                     </div>
-                    <div className="border-t border-black my-2"></div>
-                    <p className="pt-2">Name Of The Faculty :- {reportStaff}</p>
+                    <div className="border-t border-black my-2 print:my-0.5"></div>
+                    <p className="pt-2 print:pt-1">Name Of The Faculty :- {reportStaff}</p>
                   </div>
-                  <table className="w-full text-xs border-collapse border border-black text-center mt-4">
+                  <table className="w-full text-xs print:text-[10px] border-collapse border border-black text-center mt-4 print:mt-2">
                     <thead>
                       <tr className="font-bold bg-slate-50 print:bg-transparent">
-                        <th className="border border-black p-2 w-10">
+                        <th className="border border-black p-2 print:py-1 print:px-1 w-10">
                           Sr.
                           <br />
                           No.
@@ -1335,7 +1424,9 @@ export default function AdminDashboard() {
                         <th className="border border-black p-2 w-16">
                           4 - Very Good
                         </th>
-                        <th className="border border-black p-2 w-16">3 - Good</th>
+                        <th className="border border-black p-2 w-16">
+                          3 - Good
+                        </th>
                         <th className="border border-black p-2 w-16">
                           2 - Satisfactory
                         </th>
@@ -1347,25 +1438,25 @@ export default function AdminDashboard() {
                     <tbody>
                       {FEEDBACK_QUESTIONS.map((q, idx) => (
                         <tr key={idx}>
-                          <td className="border border-black p-1.5 font-bold">
+                          <td className="border border-black p-1.5 print:p-0.5 font-bold">
                             {idx + 1}
                           </td>
-                          <td className="border border-black p-1.5 text-left font-semibold">
+                          <td className="border border-black p-1.5 print:p-0.5 text-left font-semibold">
                             {q}
                           </td>
-                          <td className="border border-black p-1.5">
+                          <td className="border border-black p-1.5 print:p-0.5">
                             {scoreCounts[idx][5]}
                           </td>
-                          <td className="border border-black p-1.5">
+                          <td className="border border-black p-1.5 print:p-0.5">
                             {scoreCounts[idx][4]}
                           </td>
-                          <td className="border border-black p-1.5">
+                          <td className="border border-black p-1.5 print:p-0.5">
                             {scoreCounts[idx][3]}
                           </td>
-                          <td className="border border-black p-1.5">
+                          <td className="border border-black p-1.5 print:p-0.5">
                             {scoreCounts[idx][2]}
                           </td>
-                          <td className="border border-black p-1.5">
+                          <td className="border border-black p-1.5 print:p-0.5">
                             {scoreCounts[idx][1]}
                           </td>
                         </tr>
@@ -1396,46 +1487,52 @@ export default function AdminDashboard() {
                       <tr className="font-bold">
                         <td
                           colSpan="2"
-                          className="border border-black p-1.5 text-right"
+                          className="border border-black p-1.5 print:p-0.5 text-right"
                         >
                           Total Score
                         </td>
-                        <td className="border border-black p-1.5">
+                        <td className="border border-black p-1.5 print:p-0.5">
                           {colScores[5]}
                         </td>
-                        <td className="border border-black p-1.5">
+                        <td className="border border-black p-1.5 print:p-0.5">
                           {colScores[4]}
                         </td>
-                        <td className="border border-black p-1.5">
+                        <td className="border border-black p-1.5 print:p-0.5">
                           {colScores[3]}
                         </td>
-                        <td className="border border-black p-1.5">
+                        <td className="border border-black p-1.5 print:p-0.5">
                           {colScores[2]}
                         </td>
-                        <td className="border border-black p-1.5">
+                        <td className="border border-black p-1.5 print:p-0.5">
                           {colScores[1]}
                         </td>
                       </tr>
                       <tr className="font-bold bg-purple-50 print:bg-transparent">
                         <td
                           colSpan="6"
-                          className="border border-black p-3 text-right text-sm text-purple-900 print:text-black"
+                          className="border border-black p-3 print:py-1 print:px-2 text-right text-sm print:text-xs text-purple-900 print:text-black"
                         >
                           Average Marks Obtained out of 25
                         </td>
-                        <td className="border border-black p-3 text-sm text-purple-900 print:text-black">
+                        <td className="border border-black p-3 print:py-1 print:px-2 text-sm print:text-xs text-purple-900 print:text-black">
                           {marksOutOf25}
                         </td>
                       </tr>
                     </tbody>
                   </table>
 
+                  <div className="mt-12 flex justify-end px-4 font-black text-sm print:mt-28">
+                    <div className="text-center w-48">
+                      <div className="w-full border-b-2 border-dotted border-black mb-2"></div>
+                      <p>Principal Signature</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {reportMode === "exit" && (
-                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase">
-                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0 uppercase">
+                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
                     <h3 className="text-sm">
                       Maharashtra State Board of Technical Education
                     </h3>
@@ -1443,8 +1540,8 @@ export default function AdminDashboard() {
                   </div>
                   <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
                     <p>
-                      Institute Name: Solapur Education Society&#39;s Polytechnic,
-                      Solapur
+                      Institute Name: Solapur Education Society&#39;s
+                      Polytechnic, Solapur
                     </p>
                     <div className="border-t border-black my-2"></div>
                     <div className="flex justify-between">
@@ -1458,49 +1555,89 @@ export default function AdminDashboard() {
                       <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
                     </div>
                     <div className="border-t border-black my-2"></div>
-                    <p className="pt-2">
-                      Name Of The Faculty :- {reportStaff}
-                    </p>
+                    <p className="pt-2">Name Of The Faculty :- {reportStaff}</p>
                   </div>
                   <table className="w-full text-[11px] border-collapse border border-black text-center mt-4">
                     <thead>
                       <tr className="font-bold bg-slate-50 print:bg-transparent">
-                        <th className="border border-black p-2 w-10">Sr. No.</th>
-                        <th className="border border-black p-2 text-left">Parameters (Course Outcomes)</th>
-                        <th className="border border-black p-2 w-14">Excellent 5</th>
-                        <th className="border border-black p-2 w-14">Very good 4</th>
+                        <th className="border border-black p-2 w-10">
+                          Sr. No.
+                        </th>
+                        <th className="border border-black p-2 text-left">
+                          Parameters (Course Outcomes)
+                        </th>
+                        <th className="border border-black p-2 w-14">
+                          Excellent 5
+                        </th>
+                        <th className="border border-black p-2 w-14">
+                          Very good 4
+                        </th>
                         <th className="border border-black p-2 w-14">Good 3</th>
-                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
-                        <th className="border border-black p-2 w-14">Average 1</th>
-                        <th className="border border-black p-2 w-14">Max. Marks</th>
+                        <th className="border border-black p-2 w-14">
+                          Satisfactory 2
+                        </th>
+                        <th className="border border-black p-2 w-14">
+                          Average 1
+                        </th>
+                        <th className="border border-black p-2 w-14">
+                          Max. Marks
+                        </th>
                         <th className="border border-black p-2 w-14">TOTAL</th>
                         <th className="border border-black p-2 w-14">%</th>
                       </tr>
                     </thead>
                     <tbody>
                       {activeQuestions.map((q, idx) => {
-                        const rowTotal = (scoreCounts[idx][5] * 5) + (scoreCounts[idx][4] * 4) + (scoreCounts[idx][3] * 3) + (scoreCounts[idx][2] * 2) + (scoreCounts[idx][1] * 1);
+                        const rowTotal =
+                          scoreCounts[idx][5] * 5 +
+                          scoreCounts[idx][4] * 4 +
+                          scoreCounts[idx][3] * 3 +
+                          scoreCounts[idx][2] * 2 +
+                          scoreCounts[idx][1] * 1;
                         const rowMax = totalStudents * 5;
-                        const rowPerc = rowMax > 0 ? ((rowTotal / rowMax) * 100).toFixed(1) : "0.0";
+                        const rowPerc =
+                          rowMax > 0
+                            ? ((rowTotal / rowMax) * 100).toFixed(1)
+                            : "0.0";
                         return (
                           <tr key={idx}>
-                            <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
-                            <td className="border border-black p-1.5 text-left font-semibold">{q}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][5]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][4]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][3]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][2]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][1]}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowMax}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowTotal}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowPerc}</td>
+                            <td className="border border-black p-1.5 font-bold">
+                              {idx + 1}
+                            </td>
+                            <td className="border border-black p-1.5 text-left font-semibold">
+                              {q}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][5]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][4]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][3]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][2]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][1]}
+                            </td>
+                            <td className="border border-black p-1.5 font-bold">
+                              {rowMax}
+                            </td>
+                            <td className="border border-black p-1.5 font-bold">
+                              {rowTotal}
+                            </td>
+                            <td className="border border-black p-1.5 font-bold">
+                              {rowPerc}
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
 
-                  <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
+                  <div className="mt-12 flex justify-end pr-12 font-bold text-sm print:mt-28">
                     <div className="text-left border-black p-4">
                       <p>Signature of Principal :- ________________</p>
                     </div>
@@ -1509,67 +1646,100 @@ export default function AdminDashboard() {
               )}
 
               {reportMode === "institution" && (
-                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase font-sans">
-                  <div className="text-center font-bold mb-6 border-b-2 border-black pb-6">
-                    <h3 className="text-base tracking-tight uppercase">Solapur Education Society's Polytechnic, Solapur</h3>
-                    <h2 className="text-2xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">STUDENT SATISFACTION FEEDBACK</h2>
+                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0 uppercase font-sans">
+                  <div className="text-center font-bold mb-6 border-b-2 border-black pb-6 relative">
+                    <h3 className="text-base tracking-tight uppercase">
+                      Solapur Education Society's Polytechnic, Solapur
+                    </h3>
+                    <h2 className="text-2xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">
+                      STUDENT SATISFACTION FEEDBACK
+                    </h2>
                     <p className="mt-2 text-sm">Academic Year : {acadYear}</p>
                   </div>
-                  
+
                   <div className="mb-6 grid grid-cols-2 gap-4 text-sm font-bold px-2">
                     <p>Department: {reportDept || "All Departments"}</p>
-                    <p className="text-right">Report Date: {new Date().toLocaleDateString("en-GB")}</p>
+                    <p className="text-right">
+                      Report Date: {new Date().toLocaleDateString("en-GB")}
+                    </p>
                   </div>
 
                   <table className="w-full text-[10px] border-collapse border-2 border-black text-center">
                     <thead>
                       <tr className="font-extrabold bg-slate-100 print:bg-transparent border-b-2 border-black">
-                        <th className="border border-black p-2 w-10">Sr. No.</th>
-                        <th className="border border-black p-2 text-left min-w-[200px]">Parameters</th>
-                        <th className="border border-black p-2 w-14">Excellent 5</th>
-                        <th className="border border-black p-2 w-14">Very good 4</th>
-                        <th className="border border-black p-2 w-14">Good 3</th>
-                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
-                        <th className="border border-black p-2 w-14">Average 1</th>
-                        <th className="border border-black p-2 w-14">Max. Marks</th>
-                        <th className="border border-black p-2 w-14">TOTAL</th>
+                        <th className="border border-black p-2 print:py-1 print:px-1 w-10">
+                          Sr. No.
+                        </th>
+                        <th className="border border-black p-2 print:py-1 print:px-1 text-left min-w-[200px]">
+                          Parameters
+                        </th>
                         <th className="border border-black p-2 w-14">%</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(() => {
                         // Filter responses for institution feedback
-                        const instData = globalInstResponses.filter(r => 
-                          (!reportDept || r.department === reportDept) && 
-                          (!acadYear || r.academicYear === acadYear) &&
-                          (!reportYearLevel || r.yearLevel === reportYearLevel)
+                        const instData = globalInstResponses.filter(
+                          (r) =>
+                            (!reportDept || r.department === reportDept) &&
+                            (!acadYear || r.academicYear === acadYear) &&
+                            (!reportYearLevel ||
+                              r.yearLevel === reportYearLevel),
                         );
-                        
+
                         const respondentsCount = instData.length;
-                        
+
                         return INSTITUTION_QUESTIONS.map((q, idx) => {
                           const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-                          instData.forEach(r => {
+                          instData.forEach((r) => {
                             const val = parseInt(r.scores[idx]);
                             if (counts[val] !== undefined) counts[val]++;
                           });
 
-                          const totalScore = (counts[5]*5) + (counts[4]*4) + (counts[3]*3) + (counts[2]*2) + (counts[1]*1);
+                          const totalScore =
+                            counts[5] * 5 +
+                            counts[4] * 4 +
+                            counts[3] * 3 +
+                            counts[2] * 2 +
+                            counts[1] * 1;
                           const maxMarks = respondentsCount * 5;
-                          const percentage = maxMarks > 0 ? ((totalScore / maxMarks) * 100).toFixed(1) : "0.0";
-                          
+                          const percentage =
+                            maxMarks > 0
+                              ? ((totalScore / maxMarks) * 100).toFixed(1)
+                              : "0.0";
+
                           return (
                             <tr key={idx} className="border-b border-black">
-                              <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
-                              <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">{q}</td>
-                              <td className="border border-black p-1.5">{counts[5]}</td>
-                              <td className="border border-black p-1.5">{counts[4]}</td>
-                              <td className="border border-black p-1.5">{counts[3]}</td>
-                              <td className="border border-black p-1.5">{counts[2]}</td>
-                              <td className="border border-black p-1.5">{counts[1]}</td>
-                              <td className="border border-black p-1.5 font-black">{maxMarks}</td>
-                              <td className="border border-black p-1.5 font-black">{totalScore}</td>
-                              <td className="border border-black p-1.5 font-black">{percentage}</td>
+                              <td className="border border-black p-1.5 font-bold">
+                                {idx + 1}
+                              </td>
+                              <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">
+                                {q}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {counts[5]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {counts[4]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {counts[3]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {counts[2]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {counts[1]}
+                              </td>
+                              <td className="border border-black p-1.5 font-black">
+                                {maxMarks}
+                              </td>
+                              <td className="border border-black p-1.5 font-black">
+                                {totalScore}
+                              </td>
+                              <td className="border border-black p-1.5 font-black">
+                                {percentage}
+                              </td>
                             </tr>
                           );
                         });
@@ -1579,12 +1749,12 @@ export default function AdminDashboard() {
 
                   <div className="mt-20 flex justify-between items-end px-4 font-black text-sm print:mt-32">
                     <div className="text-center">
-                       <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
-                       <p>Head of Department</p>
+                      <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
+                      <p>Head of Department</p>
                     </div>
                     <div className="text-center">
-                       <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
-                       <p>Principal Signature</p>
+                      <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
+                      <p>Principal Signature</p>
                     </div>
                   </div>
                 </div>
@@ -1593,7 +1763,9 @@ export default function AdminDashboard() {
           ) : reportDept && reportStaff ? (
             <div className="text-center py-20 opacity-30">
               <h2 className="text-2xl font-black uppercase text-purple-900">
-                {reportMode === "exit" && !reportSubject ? "Select a subject to view Course Exit Analytics" : `No Data Available for ${reportStaff}`}
+                {reportMode === "exit" && !reportSubject
+                  ? "Select a subject to view Course Exit Analytics"
+                  : `No Data Available for ${reportStaff}`}
               </h2>
             </div>
           ) : (
@@ -1613,36 +1785,44 @@ export default function AdminDashboard() {
 
       {activeTab === "controls" && (
         <Card className="max-w-3xl overflow-hidden p-0 border-amber-200">
-           <div className="border-b border-amber-100 bg-amber-50 px-6 py-4">
-             <h2 className="page-card-title flex items-center gap-3">
-               <Building2 size={20} className="text-amber-600" />
-               Global Institution Controls
-             </h2>
-             <p className="mt-1 text-sm text-slate-500">
-               Manage global settings for the annual institution-level satisfy survey.
-             </p>
-           </div>
-           <div className="p-6 md:p-8 space-y-6">
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
-                 <h4 className="font-bold text-slate-900">Automation Active</h4>
-                 <p className="text-xs text-slate-500 mt-1">
-                   Academic Year and Semester are now automatically detected based on the calendar and student promotions.
-                 </p>
+          <div className="border-b border-amber-100 bg-amber-50 px-6 py-4">
+            <h2 className="page-card-title flex items-center gap-3">
+              <Building2 size={20} className="text-amber-600" />
+              Global Institution Controls
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Manage global settings for the annual institution-level satisfy
+              survey.
+            </p>
+          </div>
+          <div className="p-6 md:p-8 space-y-6">
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+              <h4 className="font-bold text-slate-900">Automation Active</h4>
+              <p className="text-xs text-slate-500 mt-1">
+                Academic Year and Semester are now automatically detected based
+                on the calendar and student promotions.
+              </p>
+            </div>
+            <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-200">
+              <div>
+                <h4 className="font-bold text-slate-900">
+                  Annual Portal Access
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Enable students to fill the satisfaction survey
+                </p>
               </div>
-              <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-200">
-                 <div>
-                    <h4 className="font-bold text-slate-900">Annual Portal Access</h4>
-                    <p className="text-xs text-slate-500">Enable students to fill the satisfaction survey</p>
-                 </div>
-                 <button
-                    onClick={handleToggleInstPortal}
-                    disabled={isSubmitting}
-                    className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${isInstPortalOpen ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-                  >
-                    {isInstPortalOpen ? 'Save & Close Portal' : 'Save & Open Portal'}
-                  </button>
-              </div>
-           </div>
+              <button
+                onClick={handleToggleInstPortal}
+                disabled={isSubmitting}
+                className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${isInstPortalOpen ? "bg-red-500 text-white hover:bg-red-600" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+              >
+                {isInstPortalOpen
+                  ? "Save & Close Portal"
+                  : "Save & Open Portal"}
+              </button>
+            </div>
+          </div>
         </Card>
       )}
     </div>

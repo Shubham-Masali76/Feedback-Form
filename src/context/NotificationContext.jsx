@@ -135,7 +135,7 @@ export function NotificationProvider({ children }) {
       {children}
       <div
         id={regionId}
-        className="fixed bottom-4 right-4 z-[200] flex w-[calc(100%-2rem)] max-w-md flex-col gap-2 pointer-events-none sm:right-6"
+        className="fixed bottom-4 right-4 z-[200] flex w-[calc(100%-2rem)] max-w-md flex-col gap-2 pointer-events-none sm:right-6 print:hidden print-hide"
         aria-live="polite"
         aria-relevant="additions text"
       >

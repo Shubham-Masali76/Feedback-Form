@@ -134,7 +134,7 @@ export default function App() {
             className="animate-blob [animation-delay:4s] pointer-events-none absolute -bottom-32 left-1/4 h-[500px] w-[500px] rounded-full bg-cyan-600/20 blur-[120px]"
             aria-hidden
           />
-          
+
           {/* Grid pattern */}
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.05]"
@@ -215,98 +215,103 @@ export default function App() {
               </div>
             </div>
           ) : (
-    <div className="min-h-screen bg-app-shell">
-      <nav className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 px-4 py-3 sm:px-6 backdrop-blur-md shadow-nav flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <div
-            className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-xs font-extrabold shadow-md shadow-blue-600/20"
-            aria-hidden
-          >
-            FB
-          </div>
-          <div className="min-w-0">
-            <h1 className="font-extrabold tracking-tight bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent text-lg sm:text-xl leading-tight truncate">
-              Feedback Portal
-            </h1>
-            <h2 className="text-xs text-slate-500 font-medium truncate">
-              SES Polytechnic Solapur
-            </h2>
-          </div>
-        </div>
+            <div className="min-h-screen bg-app-shell">
+              <nav className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 px-4 py-3 sm:px-6 backdrop-blur-md shadow-nav flex flex-wrap items-center justify-between gap-3 print:hidden print-hide">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                  <div
+                    className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-xs font-extrabold shadow-md shadow-blue-600/20"
+                    aria-hidden
+                  >
+                    FB
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="font-extrabold tracking-tight bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent text-lg sm:text-xl leading-tight truncate">
+                      Feedback Portal
+                    </h1>
+                    <h2 className="text-xs text-slate-500 font-medium truncate">
+                      SES Polytechnic Solapur
+                    </h2>
+                  </div>
+                </div>
 
-        <div className="flex items-center gap-2 sm:gap-3 ml-auto">
-          {user?.role === "hod" && (
-            <button
-              type="button"
-              onClick={() => setViewMode(viewMode === "hod" ? "staff" : "hod")}
-              className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border transition-all ${
-                viewMode === "hod"
-                  ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
-                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-              }`}
-            >
-              {viewMode === "hod" ? (
-                <>
-                  <Users size={16} strokeWidth={2.5} />
-                  Switch to Faculty Mode
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={16} strokeWidth={2.5} />
-                  Back to HOD Mode
-                </>
-              )}
-            </button>
-          )}
+                <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+                  {user?.role === "hod" && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setViewMode(viewMode === "hod" ? "staff" : "hod")
+                      }
+                      className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border transition-all ${
+                        viewMode === "hod"
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                          : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                      }`}
+                    >
+                      {viewMode === "hod" ? (
+                        <>
+                          <Users size={16} strokeWidth={2.5} />
+                          Switch to Faculty Mode
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={16} strokeWidth={2.5} />
+                          Back to HOD Mode
+                        </>
+                      )}
+                    </button>
+                  )}
 
-          {firebaseAuthUser && user?.role !== "student" && (
-            <button
-              type="button"
-              onClick={() => setShowChangePassword(true)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-blue-800 px-3 py-2 rounded-xl border border-slate-200 hover:border-blue-300 bg-white shadow-sm hover:shadow transition-all"
-            >
-              <KeyRound size={16} className="shrink-0" aria-hidden />
-              <span className="hidden sm:inline">Password</span>
-            </button>
-          )}
-          <div className="hidden sm:flex items-center gap-2.5 max-w-[240px] min-w-0 rounded-xl border border-slate-200/90 bg-slate-50/80 px-3 py-2 shadow-sm">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-100 text-slate-600">
-              <UserCircle size={20} strokeWidth={1.75} aria-hidden />
+                  {firebaseAuthUser && user?.role !== "student" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowChangePassword(true)}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-blue-800 px-3 py-2 rounded-xl border border-slate-200 hover:border-blue-300 bg-white shadow-sm hover:shadow transition-all"
+                    >
+                      <KeyRound size={16} className="shrink-0" aria-hidden />
+                      <span className="hidden sm:inline">Password</span>
+                    </button>
+                  )}
+                  <div className="hidden sm:flex items-center gap-2.5 max-w-[240px] min-w-0 rounded-xl border border-slate-200/90 bg-slate-50/80 px-3 py-2 shadow-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-100 text-slate-600">
+                      <UserCircle size={20} strokeWidth={1.75} aria-hidden />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate leading-tight">
+                        {user?.name || "Signed in"}
+                      </p>
+                      <p className="text-[11px] font-medium text-blue-600 truncate">
+                        {roleLabel}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-red-700 px-3 py-2 rounded-xl border border-slate-200 hover:border-red-200 bg-white shadow-sm hover:shadow transition-all"
+                  >
+                    <LogOut size={16} className="shrink-0" aria-hidden />
+                    Logout
+                  </button>
+                </div>
+              </nav>
+
+              <main className="p-4 md:p-8 max-w-7xl mx-auto pb-12 print:p-0 print:m-0 print:max-w-none w-full">
+                {user.role === "admin" && <AdminDashboard user={user} />}
+                {user.role === "student" && <StudentDashboard user={user} />}
+                {user.role === "hod" &&
+                  (viewMode === "hod" ? (
+                    <HodDashboard user={user} />
+                  ) : (
+                    <StaffDashboard user={user} />
+                  ))}
+                {user.role === "staff" && <StaffDashboard user={user} />}
+              </main>
+
+              <ChangePasswordModal
+                open={showChangePassword}
+                onClose={() => setShowChangePassword(false)}
+              />
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate leading-tight">
-                {user?.name || "Signed in"}
-              </p>
-              <p className="text-[11px] font-medium text-blue-600 truncate">
-                {roleLabel}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-red-700 px-3 py-2 rounded-xl border border-slate-200 hover:border-red-200 bg-white shadow-sm hover:shadow transition-all"
-          >
-            <LogOut size={16} className="shrink-0" aria-hidden />
-            Logout
-          </button>
-        </div>
-      </nav>
-
-      <main className="p-4 md:p-8 max-w-7xl mx-auto pb-12">
-        {user.role === "admin" && <AdminDashboard user={user} />}
-        {user.role === "student" && <StudentDashboard user={user} />}
-        {user.role === "hod" && (
-          viewMode === "hod" ? <HodDashboard user={user} /> : <StaffDashboard user={user} />
-        )}
-        {user.role === "staff" && <StaffDashboard user={user} />}
-      </main>
-
-            <ChangePasswordModal
-              open={showChangePassword}
-              onClose={() => setShowChangePassword(false)}
-            />
-          </div>
           )}
         </div>
       )}

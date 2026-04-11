@@ -172,7 +172,10 @@ export default function HodDashboard({ user }) {
 
       const allSubQ = query(collection(db, "Subjects"));
       const allSubSnap = await getDocs(allSubQ);
-      const fetchedAllSubjects = allSubSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      const fetchedAllSubjects = allSubSnap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      }));
       setAllSubjectList(fetchedAllSubjects);
       setSubjectList(
         fetchedAllSubjects.filter((s) => s.department === user.dept),
@@ -205,17 +208,19 @@ export default function HodDashboard({ user }) {
       // Fetch Course Exit Data
       const exitFormsQ = query(
         collection(db, "CourseExitForms"),
-        where("department", "==", user.dept)
+        where("department", "==", user.dept),
       );
       const exitFormsSnap = await getDocs(exitFormsQ);
-      setExitForms(exitFormsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      
+      setExitForms(exitFormsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
       const exitRespQ = query(
         collection(db, "CourseExitResponses"),
-        where("department", "==", user.dept)
+        where("department", "==", user.dept),
       );
       const exitRespSnap = await getDocs(exitRespQ);
-      setExitResponses(exitRespSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setExitResponses(
+        exitRespSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      );
 
       // Fetch Allocations
       const allocQ = query(
@@ -600,32 +605,32 @@ export default function HodDashboard({ user }) {
     }
     return true;
   });
-  const activeDataSource = reportMode === "exit" 
-    ? exitResponses 
-    : feedbacks;
-  
+  const activeDataSource = reportMode === "exit" ? exitResponses : feedbacks;
+
   const reportData = activeDataSource.filter((f) => {
-    return f.staffName === reportStaff &&
-           (reportSubject === "" || f.subject === reportSubject);
+    return (
+      f.staffName === reportStaff &&
+      (reportSubject === "" || f.subject === reportSubject)
+    );
   });
   const totalStudents = reportData.length;
 
   // Calculate total students in class, submitted, and remaining
   const allocation = reportSubject
     ? allocations.find(
-      (a) => a.staff === reportStaff && a.subject === reportSubject,
-    )
+        (a) => a.staff === reportStaff && a.subject === reportSubject,
+      )
     : null;
   const studentsInClass = allocation
     ? students.filter((s) => {
-      const matchClass =
-        s.targetClass === (allocation.targetClass || allocation.tClass);
-      const matchDiv =
-        allocation.division === "All"
-          ? true
-          : (s.division || "A") === allocation.division;
-      return matchClass && matchDiv;
-    })
+        const matchClass =
+          s.targetClass === (allocation.targetClass || allocation.tClass);
+        const matchDiv =
+          allocation.division === "All"
+            ? true
+            : (s.division || "A") === allocation.division;
+        return matchClass && matchDiv;
+      })
     : [];
   const totalStudentsInClass = studentsInClass.length;
 
@@ -653,14 +658,18 @@ export default function HodDashboard({ user }) {
   });
 
   // For Exit Surveys, we need the specific form to get the custom questions array
-  const activeExitForm = reportMode === "exit" && reportSubject 
-    ? exitForms.find(f => f.staffName === reportStaff && f.subject === reportSubject) 
-    : null;
-    
-  const activeQuestions = reportMode === "exit" 
-    ? (activeExitForm?.questions || []) 
-    : FEEDBACK_QUESTIONS;
-    
+  const activeExitForm =
+    reportMode === "exit" && reportSubject
+      ? exitForms.find(
+          (f) => f.staffName === reportStaff && f.subject === reportSubject,
+        )
+      : null;
+
+  const activeQuestions =
+    reportMode === "exit"
+      ? activeExitForm?.questions || []
+      : FEEDBACK_QUESTIONS;
+
   const qCount = activeQuestions.length;
 
   const scoreCounts = Array.from({ length: qCount }, () => ({
@@ -726,7 +735,9 @@ export default function HodDashboard({ user }) {
       return;
     }
 
-    const studentsToPromote = students.filter(s => s.targetClass === promoteSource);
+    const studentsToPromote = students.filter(
+      (s) => s.targetClass === promoteSource,
+    );
     if (studentsToPromote.length === 0) {
       warning(`No students found in ${promoteSource}.`);
       return;
@@ -740,13 +751,15 @@ export default function HodDashboard({ user }) {
       const batch = writeBatch(db);
       studentsToPromote.forEach((std) => {
         const docRef = doc(db, "Students", std.id);
-        batch.update(docRef, { 
+        batch.update(docRef, {
           targetClass: promoteTarget,
-          status: "pending" // Reset status for the new semester
+          status: "pending", // Reset status for the new semester
         });
       });
       await batch.commit();
-      success(`Successfully promoted ${studentsToPromote.length} students to ${promoteTarget}.`);
+      success(
+        `Successfully promoted ${studentsToPromote.length} students to ${promoteTarget}.`,
+      );
       setPromoteSource("");
       setPromoteTarget("");
       fetchData();
@@ -763,7 +776,9 @@ export default function HodDashboard({ user }) {
       return;
     }
 
-    const studentsToDelete = students.filter(s => s.targetClass === deleteClassTarget);
+    const studentsToDelete = students.filter(
+      (s) => s.targetClass === deleteClassTarget,
+    );
     if (studentsToDelete.length === 0) {
       warning(`No students found in ${deleteClassTarget}.`);
       return;
@@ -779,7 +794,9 @@ export default function HodDashboard({ user }) {
         batch.delete(doc(db, "Students", std.id));
       });
       await batch.commit();
-      success(`Deleted ${studentsToDelete.length} students from ${deleteClassTarget}.`);
+      success(
+        `Deleted ${studentsToDelete.length} students from ${deleteClassTarget}.`,
+      );
       setDeleteClassTarget("");
       fetchData();
     } catch (err) {
@@ -844,9 +861,12 @@ export default function HodDashboard({ user }) {
               <Building2 size={24} strokeWidth={2} />
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">HOD Portal</h1>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                HOD Portal
+              </h1>
               <h2 className="text-sm font-medium text-slate-500 mt-0.5 truncate">
-                {user.dept} - Manage students, subjects, allotments, and analytics.
+                {user.dept} - Manage students, subjects, allotments, and
+                analytics.
               </h2>
             </div>
           </div>
@@ -871,12 +891,18 @@ export default function HodDashboard({ user }) {
                 role="tab"
                 aria-selected={activeTab === t.id}
                 onClick={() => setActiveTab(t.id)}
-                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap w-full ${activeTab === t.id
+                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap w-full ${
+                  activeTab === t.id
                     ? "bg-white text-violet-700 shadow-md ring-1 ring-slate-200 scale-100"
                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
-                  }`}
+                }`}
               >
-                <t.icon size={16} className={activeTab === t.id ? "text-violet-600" : "text-slate-400"} />
+                <t.icon
+                  size={16}
+                  className={
+                    activeTab === t.id ? "text-violet-600" : "text-slate-400"
+                  }
+                />
                 {t.label}
               </button>
             ))}
@@ -884,278 +910,285 @@ export default function HodDashboard({ user }) {
         </div>
         {activeTab === "students" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full items-start animate-in slide-in-from-bottom-4 duration-500">
-              <Card className="overflow-hidden border-indigo-100 shadow-md">
-                <div className="bg-gradient-to-br from-indigo-50 via-white to-violet-50/50 p-7 relative">
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-200 rounded-full blur-3xl opacity-40 z-0 pointer-events-none"></div>
-                  <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-violet-200 rounded-full blur-3xl opacity-30 z-0 pointer-events-none"></div>
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6 relative z-10">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm">
-                      <Upload
-                        className="h-6 w-6 text-indigo-600"
-                        strokeWidth={2}
-                        aria-hidden
-                      />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
-                        Import Student Batch
-                      </h2>
-                      <p className="text-slate-500 text-sm mt-1 mb-1 leading-relaxed max-w-xl font-medium">
-                        Columns required: Name, Roll (15xx / 25xx / 35xx),
-                        PRN, and{" "}
-                        <strong className="text-indigo-600 font-semibold">
-                          Email
-                        </strong>{" "}
-                        (for OTP).
-                      </p>
-                    </div>
+            <Card className="overflow-hidden border-indigo-100 shadow-md">
+              <div className="bg-gradient-to-br from-indigo-50 via-white to-violet-50/50 p-7 relative">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-200 rounded-full blur-3xl opacity-40 z-0 pointer-events-none"></div>
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-violet-200 rounded-full blur-3xl opacity-30 z-0 pointer-events-none"></div>
+                <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6 relative z-10">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200 shadow-sm">
+                    <Upload
+                      className="h-6 w-6 text-indigo-600"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
                   </div>
-                  <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-white/60 p-5 ring-1 ring-slate-200 shadow-sm backdrop-blur-md relative z-10">
-                    <div className="flex min-w-[150px] flex-1 flex-col gap-1.5 relative z-50">
-                      <span className="text-xs font-semibold text-slate-700 ml-1">
-                        Select Class
-                      </span>
-                      <CustomSelect
-                        value={excelClass}
-                        onChange={(val) => setExcelClass(val)}
-                        options={dynamicClassOptions}
-                        placeholder="Select Class"
-                      />
-                    </div>
-                    <div className="flex w-full min-w-[120px] max-w-[150px] flex-col gap-1.5 relative z-40">
-                      <span className="text-xs font-semibold text-slate-700 ml-1">
-                        Division
-                      </span>
-                      <CustomSelect
-                        value={excelDiv}
-                        onChange={(val) => setExcelDiv(val)}
-                        options={[
-                          { value: "A", label: "Div A" },
-                          { value: "B", label: "Div B" },
-                        ]}
-                        placeholder="Division"
-                      />
-                    </div>
-                    <label className="flex flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
-                      {isSubmitting ? "Uploading…" : "Choose Excel file"}
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept=".xlsx, .xls"
-                        disabled={isSubmitting}
-                        onChange={(e) => {
-                          if (!excelClass) {
-                            warning("Select a target class first.");
-                            return;
-                          }
-                          handleExcelUpload(e);
-                        }}
-                      />
-                    </label>
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
+                      Import Student Batch
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-1 mb-1 leading-relaxed max-w-xl font-medium">
+                      Columns required: Name, Roll (15xx / 25xx / 35xx), PRN,
+                      and{" "}
+                      <strong className="text-indigo-600 font-semibold">
+                        Email
+                      </strong>{" "}
+                      (for OTP).
+                    </p>
                   </div>
                 </div>
-              </Card>
-
-              {/* Manual Student Form */}
-              <Card className="p-0 overflow-hidden shadow-sm relative border border-slate-200/80">
-                <div className="border-b border-indigo-50 bg-indigo-50/50 px-5 py-4">
-                  <h3 className="font-extrabold text-indigo-950 text-base">
-                    Add Student Manually
-                  </h3>
-                  <p className="text-slate-500 text-sm mt-1 leading-relaxed font-medium">
-                    Register a single student. Ensure PRN and Email are correct for portal access.
-                  </p>
-                </div>
-                <form
-                  onSubmit={handleManualStudent}
-                  className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6"
-                >
-                  <div className="md:col-span-2">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                      Full Name
-                    </label>
-                    <input
-                      placeholder="As per registration"
-                      className="input-app py-2.5 text-sm font-semibold"
-                      value={stdForm.name}
-                      onChange={(e) =>
-                        setStdForm({ ...stdForm, name: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                      Roll No.
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="e.g. 1523"
-                      maxLength={4}
-                      title={ROLL_NUMBER_HINT}
-                      className="input-app py-2.5 text-sm font-semibold tabular-nums tracking-widest"
-                      value={stdForm.roll}
-                      onChange={(e) =>
-                        setStdForm({
-                          ...stdForm,
-                          roll: normalizeRollDigits(e.target.value),
-                        })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                      Enrollment (PRN)
-                    </label>
-                    <input
-                      placeholder="PRN"
-                      className="input-app py-2.5 text-sm font-semibold"
-                      value={stdForm.enroll}
-                      onChange={(e) =>
-                        setStdForm({ ...stdForm, enroll: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      placeholder="student@example.com"
-                      className="input-app py-2.5 text-sm font-semibold"
-                      value={stdForm.email}
-                      onChange={(e) =>
-                        setStdForm({ ...stdForm, email: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="md:col-span-4 relative z-[60]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                      Class
-                    </label>
+                <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-white/60 p-5 ring-1 ring-slate-200 shadow-sm backdrop-blur-md relative z-10">
+                  <div className="flex min-w-[150px] flex-1 flex-col gap-1.5 relative z-50">
+                    <span className="text-xs font-semibold text-slate-700 ml-1">
+                      Select Class
+                    </span>
                     <CustomSelect
-                      value={stdForm.tClass}
-                      onChange={(val) =>
-                        setStdForm({ ...stdForm, tClass: val })
-                      }
+                      value={excelClass}
+                      onChange={(val) => setExcelClass(val)}
                       options={dynamicClassOptions}
                       placeholder="Select Class"
                     />
                   </div>
-                  <div className="md:col-span-2 relative z-50">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                  <div className="flex w-full min-w-[120px] max-w-[150px] flex-col gap-1.5 relative z-40">
+                    <span className="text-xs font-semibold text-slate-700 ml-1">
                       Division
-                    </label>
+                    </span>
                     <CustomSelect
-                      value={stdForm.div}
-                      onChange={(val) => setStdForm({ ...stdForm, div: val })}
+                      value={excelDiv}
+                      onChange={(val) => setExcelDiv(val)}
                       options={[
-                        { value: "A", label: "A" },
-                        { value: "B", label: "B" },
+                        { value: "A", label: "Div A" },
+                        { value: "B", label: "Div B" },
                       ]}
-                      placeholder="Div A"
+                      placeholder="Division"
                     />
                   </div>
-                  <div className="md:col-span-12 lg:col-span-12 xl:col-span-2 flex justify-end">
-                    <button
-                      type="submit"
+                  <label className="flex flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
+                    {isSubmitting ? "Uploading…" : "Choose Excel file"}
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".xlsx, .xls"
                       disabled={isSubmitting}
-                      className="w-full xl:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap"
-                    >
-                      {isSubmitting ? "Saving…" : "Save Student"}
-                    </button>
-                  </div>
-                </form>
-              </Card>
+                      onChange={(e) => {
+                        if (!excelClass) {
+                          warning("Select a target class first.");
+                          return;
+                        }
+                        handleExcelUpload(e);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </Card>
+
+            {/* Manual Student Form */}
+            <Card className="p-0 overflow-hidden shadow-sm relative border border-slate-200/80">
+              <div className="border-b border-indigo-50 bg-indigo-50/50 px-5 py-4">
+                <h3 className="font-extrabold text-indigo-950 text-base">
+                  Add Student Manually
+                </h3>
+                <p className="text-slate-500 text-sm mt-1 leading-relaxed font-medium">
+                  Register a single student. Ensure PRN and Email are correct
+                  for portal access.
+                </p>
+              </div>
+              <form
+                onSubmit={handleManualStudent}
+                className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6"
+              >
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Full Name
+                  </label>
+                  <input
+                    placeholder="As per registration"
+                    className="input-app py-2.5 text-sm font-semibold"
+                    value={stdForm.name}
+                    onChange={(e) =>
+                      setStdForm({ ...stdForm, name: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Roll No.
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="e.g. 1523"
+                    maxLength={4}
+                    title={ROLL_NUMBER_HINT}
+                    className="input-app py-2.5 text-sm font-semibold tabular-nums tracking-widest"
+                    value={stdForm.roll}
+                    onChange={(e) =>
+                      setStdForm({
+                        ...stdForm,
+                        roll: normalizeRollDigits(e.target.value),
+                      })
+                    }
+                    required
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Enrollment (PRN)
+                  </label>
+                  <input
+                    placeholder="PRN"
+                    className="input-app py-2.5 text-sm font-semibold"
+                    value={stdForm.enroll}
+                    onChange={(e) =>
+                      setStdForm({ ...stdForm, enroll: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="md:col-span-3">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="student@example.com"
+                    className="input-app py-2.5 text-sm font-semibold"
+                    value={stdForm.email}
+                    onChange={(e) =>
+                      setStdForm({ ...stdForm, email: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="md:col-span-4 relative z-[60]">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Class
+                  </label>
+                  <CustomSelect
+                    value={stdForm.tClass}
+                    onChange={(val) => setStdForm({ ...stdForm, tClass: val })}
+                    options={dynamicClassOptions}
+                    placeholder="Select Class"
+                  />
+                </div>
+                <div className="md:col-span-2 relative z-50">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                    Division
+                  </label>
+                  <CustomSelect
+                    value={stdForm.div}
+                    onChange={(val) => setStdForm({ ...stdForm, div: val })}
+                    options={[
+                      { value: "A", label: "A" },
+                      { value: "B", label: "B" },
+                    ]}
+                    placeholder="Div A"
+                  />
+                </div>
+                <div className="md:col-span-12 lg:col-span-12 xl:col-span-2 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full xl:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {isSubmitting ? "Saving…" : "Save Student"}
+                  </button>
+                </div>
+              </form>
+            </Card>
           </div>
         )}
 
         {activeTab === "lifecycle" && (
           <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-             {/* Student Lifecycle Tools */}
-             <Card className="overflow-hidden border-orange-100 shadow-md">
-                <div className="bg-gradient-to-br from-orange-50 via-white to-amber-50/50 p-7 relative">
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-orange-200 shadow-sm">
-                      <RefreshCw className="h-6 w-6 text-orange-600" />
+            {/* Student Lifecycle Tools */}
+            <Card className="overflow-hidden border-orange-100 shadow-md">
+              <div className="bg-gradient-to-br from-orange-50 via-white to-amber-50/50 p-7 relative">
+                <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-orange-200 shadow-sm">
+                    <RefreshCw className="h-6 w-6 text-orange-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
+                      Student Lifecycle Tools
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-1 font-medium italic">
+                      "Each sem feedback must be isolated" — HOD
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Batch Promotion */}
+                  <div className="p-5 bg-white/60 rounded-2xl border border-orange-100 backdrop-blur-sm space-y-4">
+                    <h4 className="text-xs font-bold text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                      <ArrowUpCircle size={14} /> Smart Promotion (FY → SY → TY)
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 ml-1">
+                          SOURCE SEMESTER
+                        </span>
+                        <CustomSelect
+                          value={promoteSource}
+                          onChange={(val) => setPromoteSource(val)}
+                          options={dynamicClassOptions}
+                          placeholder="Current Sem"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 ml-1">
+                          TARGET SEMESTER
+                        </span>
+                        <CustomSelect
+                          value={promoteTarget}
+                          onChange={(val) => setPromoteTarget(val)}
+                          options={dynamicClassOptions}
+                          placeholder="Promote to..."
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
-                        Student Lifecycle Tools
-                      </h2>
-                      <p className="text-slate-500 text-sm mt-1 font-medium italic">
-                        "Each sem feedback must be isolated" — HOD
-                      </p>
-                    </div>
+                    <button
+                      onClick={handleBulkPromote}
+                      disabled={
+                        isSubmitting || !promoteSource || !promoteTarget
+                      }
+                      className="w-full h-11 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-orange-200 active:scale-95"
+                    >
+                      {isSubmitting
+                        ? "Processing..."
+                        : "Promote Batch to Next Semester"}
+                    </button>
                   </div>
 
-                  <div className="space-y-6">
-                    {/* Batch Promotion */}
-                    <div className="p-5 bg-white/60 rounded-2xl border border-orange-100 backdrop-blur-sm space-y-4">
-                      <h4 className="text-xs font-bold text-orange-700 uppercase tracking-widest flex items-center gap-2">
-                        <ArrowUpCircle size={14} /> Smart Promotion (FY → SY → TY)
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-500 ml-1">SOURCE SEMESTER</span>
-                          <CustomSelect
-                            value={promoteSource}
-                            onChange={(val) => setPromoteSource(val)}
-                            options={dynamicClassOptions}
-                            placeholder="Current Sem"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-500 ml-1">TARGET SEMESTER</span>
-                          <CustomSelect
-                            value={promoteTarget}
-                            onChange={(val) => setPromoteTarget(val)}
-                            options={dynamicClassOptions}
-                            placeholder="Promote to..."
-                          />
-                        </div>
+                  {/* Batch Deletion */}
+                  <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4">
+                    <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
+                      <Trash2 size={14} /> Graduation Cleanup
+                    </h4>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <CustomSelect
+                          value={deleteClassTarget}
+                          onChange={(val) => setDeleteClassTarget(val)}
+                          options={dynamicClassOptions}
+                          placeholder="Select Graduated Batch"
+                        />
                       </div>
                       <button
-                        onClick={handleBulkPromote}
-                        disabled={isSubmitting || !promoteSource || !promoteTarget}
-                        className="w-full h-11 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-orange-200 active:scale-95"
+                        onClick={handleBulkDeleteStudents}
+                        disabled={isSubmitting || !deleteClassTarget}
+                        className="px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
                       >
-                        {isSubmitting ? "Processing..." : "Promote Batch to Next Semester"}
+                        Clear Batch
                       </button>
-                    </div>
-
-                    {/* Batch Deletion */}
-                    <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4">
-                      <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
-                        <Trash2 size={14} /> Graduation Cleanup
-                      </h4>
-                      <div className="flex gap-4">
-                        <div className="flex-1">
-                          <CustomSelect
-                            value={deleteClassTarget}
-                            onChange={(val) => setDeleteClassTarget(val)}
-                            options={dynamicClassOptions}
-                            placeholder="Select Graduated Batch"
-                          />
-                        </div>
-                        <button
-                          onClick={handleBulkDeleteStudents}
-                          disabled={isSubmitting || !deleteClassTarget}
-                          className="px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
-                        >
-                          Clear Batch
-                        </button>
-                      </div>
                     </div>
                   </div>
                 </div>
-              </Card>
+              </div>
+            </Card>
           </div>
         )}
 
@@ -1190,7 +1223,12 @@ export default function HodDashboard({ user }) {
                         onChange={(val) => setFilterClass(val)}
                         options={[
                           { value: "", label: "All Classes" },
-                          ...dynamicClassOptions.flatMap(g => g.options.map(opt => ({ value: opt.value, label: opt.label })))
+                          ...dynamicClassOptions.flatMap((g) =>
+                            g.options.map((opt) => ({
+                              value: opt.value,
+                              label: opt.label,
+                            })),
+                          ),
                         ]}
                         placeholder="All Classes"
                       />
@@ -1202,7 +1240,7 @@ export default function HodDashboard({ user }) {
                         options={[
                           { value: "", label: "All Divisions" },
                           { value: "A", label: "Div A" },
-                          { value: "B", label: "Div B" }
+                          { value: "B", label: "Div B" },
                         ]}
                         placeholder="All Divisions"
                       />
@@ -1227,107 +1265,205 @@ export default function HodDashboard({ user }) {
                   filteredStudents.map((s) => {
                     if (editingStudentId === s.id) {
                       return (
-                        <div key={s.id} className="p-4 bg-white rounded-2xl border-2 border-indigo-400 shadow-md transition-all relative z-50 animate-in fade-in zoom-in-95 duration-200">
-                          <form onSubmit={handleUpdateStudent} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div
+                          key={s.id}
+                          className="p-4 bg-white rounded-2xl border-2 border-indigo-400 shadow-md transition-all relative z-50 animate-in fade-in zoom-in-95 duration-200"
+                        >
+                          <form
+                            onSubmit={handleUpdateStudent}
+                            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                          >
                             <div className="md:col-span-2">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Full Name</label>
-                              <input required value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Full Name" />
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                Full Name
+                              </label>
+                              <input
+                                required
+                                value={editForm.name}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    name: e.target.value,
+                                  })
+                                }
+                                className="input-app py-2 text-sm font-semibold w-full"
+                                placeholder="Full Name"
+                              />
                             </div>
                             <div className="md:col-span-1">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Roll No.</label>
-                              <input required value={editForm.roll} onChange={(e) => setEditForm({...editForm, roll: normalizeRollDigits(e.target.value)})} className="input-app py-2 text-sm font-semibold tabular-nums w-full" placeholder="Roll No" />
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                Roll No.
+                              </label>
+                              <input
+                                required
+                                value={editForm.roll}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    roll: normalizeRollDigits(e.target.value),
+                                  })
+                                }
+                                className="input-app py-2 text-sm font-semibold tabular-nums w-full"
+                                placeholder="Roll No"
+                              />
                             </div>
                             <div className="md:col-span-1">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">PRN</label>
-                              <input required value={editForm.enroll} onChange={(e) => setEditForm({...editForm, enroll: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="PRN" />
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                PRN
+                              </label>
+                              <input
+                                required
+                                value={editForm.enroll}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    enroll: e.target.value,
+                                  })
+                                }
+                                className="input-app py-2 text-sm font-semibold w-full"
+                                placeholder="PRN"
+                              />
                             </div>
                             <div className="md:col-span-2">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Email</label>
-                              <input required type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Email" />
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                Email
+                              </label>
+                              <input
+                                required
+                                type="email"
+                                value={editForm.email}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    email: e.target.value,
+                                  })
+                                }
+                                className="input-app py-2 text-sm font-semibold w-full"
+                                placeholder="Email"
+                              />
                             </div>
                             <div className="md:col-span-1">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Class</label>
-                              <select className="input-app py-2 text-sm font-semibold w-full" value={editForm.tClass} onChange={(e) => setEditForm({ ...editForm, tClass: e.target.value })}>
-                                {dynamicClassOptions.flatMap(g => g.options).map((opt) => (
-                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                Class
+                              </label>
+                              <select
+                                className="input-app py-2 text-sm font-semibold w-full"
+                                value={editForm.tClass}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    tClass: e.target.value,
+                                  })
+                                }
+                              >
+                                {dynamicClassOptions
+                                  .flatMap((g) => g.options)
+                                  .map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
                               </select>
                             </div>
                             <div className="md:col-span-1">
-                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">Division</label>
-                              <select className="input-app py-2 text-sm font-semibold w-full" value={editForm.div} onChange={(e) => setEditForm({...editForm, div: e.target.value})}>
+                              <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
+                                Division
+                              </label>
+                              <select
+                                className="input-app py-2 text-sm font-semibold w-full"
+                                value={editForm.div}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    div: e.target.value,
+                                  })
+                                }
+                              >
                                 <option value="A">Div A</option>
                                 <option value="B">Div B</option>
                               </select>
                             </div>
                             <div className="md:col-span-2 flex justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
-                              <button type="button" onClick={() => setEditingStudentId(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
-                              <button type="submit" className="px-5 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all active:scale-95">Save</button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingStudentId(null)}
+                                className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-5 py-2 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-all active:scale-95"
+                              >
+                                Save
+                              </button>
                             </div>
                           </form>
                         </div>
                       );
                     }
                     return (
-                    <div
-                      key={s.id}
-                      className="group flex flex-col sm:flex-row items-start justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/10 animate-in fade-in duration-300"
-                    >
-                      <div className="min-w-0 w-full sm:w-auto flex-1">
-                        <p className="text-sm font-extrabold text-slate-800 truncate">
-                          {s.name}
-                        </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex rounded-md bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-indigo-600">
-                            {s.targetClass} · Div {s.division || "A"}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
-                            {s.enrollmentNo}
-                          </span>
-                        </div>
-                        {s.email && (
-                          <p className="mt-1.5 truncate text-[10px] font-bold text-slate-500 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
-                            {s.email}
+                      <div
+                        key={s.id}
+                        className="group flex flex-col sm:flex-row items-start justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white p-4 shadow-sm transition hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/10 animate-in fade-in duration-300"
+                      >
+                        <div className="min-w-0 w-full sm:w-auto flex-1">
+                          <p className="text-sm font-extrabold text-slate-800 truncate">
+                            {s.name}
                           </p>
-                        )}
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex rounded-md bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-indigo-600">
+                              {s.targetClass} · Div {s.division || "A"}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md">
+                              {s.enrollmentNo}
+                            </span>
+                          </div>
+                          {s.email && (
+                            <p className="mt-1.5 truncate text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+                              {s.email}
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0 border-dashed">
+                          <button
+                            type="button"
+                            title="Edit student"
+                            onClick={() => {
+                              setEditingStudentId(s.id);
+                              setEditForm({
+                                name: s.name || "",
+                                roll: s.rollNo || "",
+                                enroll: s.enrollmentNo || "",
+                                email: s.email || "",
+                                tClass: s.targetClass || "",
+                                div: s.division || "A",
+                              });
+                            }}
+                            className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none"
+                          >
+                            <Edit2 size={16} />{" "}
+                            <span className="hidden xs:inline">Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Remove student"
+                            onClick={async () => {
+                              if (window.confirm(`Delete student ${s.name}?`)) {
+                                await deleteDoc(doc(db, "Students", s.id));
+                                fetchData();
+                              }
+                            }}
+                            className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none"
+                          >
+                            <Trash2 size={16} />{" "}
+                            <span className="hidden xs:inline">Delete</span>
+                          </button>
+                        </div>
                       </div>
-                      <div className="shrink-0 flex items-center gap-1 w-full sm:w-auto justify-end mt-2 sm:mt-0 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0 border-dashed">
-                        <button
-                          type="button"
-                          title="Edit student"
-                          onClick={() => {
-                            setEditingStudentId(s.id);
-                            setEditForm({
-                              name: s.name || "",
-                              roll: s.rollNo || "",
-                              enroll: s.enrollmentNo || "",
-                              email: s.email || "",
-                              tClass: s.targetClass || "",
-                              div: s.division || "A",
-                            });
-                          }}
-                          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-500 transition hover:bg-indigo-50 hover:text-indigo-600 focus:outline-none"
-                        >
-                          <Edit2 size={16} /> <span className="hidden xs:inline">Edit</span>
-                        </button>
-                        <button
-                          type="button"
-                          title="Remove student"
-                          onClick={async () => {
-                            if (window.confirm(`Delete student ${s.name}?`)) {
-                              await deleteDoc(doc(db, "Students", s.id));
-                              fetchData();
-                            }
-                          }}
-                          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none"
-                        >
-                          <Trash2 size={16} /> <span className="hidden xs:inline">Delete</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
                 )}
               </div>
             </Card>
@@ -1443,26 +1579,81 @@ export default function HodDashboard({ user }) {
                   subjectList.map((s) => {
                     if (editingSubjectId === s.id) {
                       return (
-                        <div key={s.id} className="p-5 bg-white rounded-2xl border-2 border-emerald-400 shadow-md transition-all relative z-50">
-                          <form onSubmit={handleUpdateSubject} className="flex flex-col gap-4">
+                        <div
+                          key={s.id}
+                          className="p-5 bg-white rounded-2xl border-2 border-emerald-400 shadow-md transition-all relative z-50"
+                        >
+                          <form
+                            onSubmit={handleUpdateSubject}
+                            className="flex flex-col gap-4"
+                          >
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="text-xs font-semibold text-slate-700 mb-1 block">Subject Name</label>
-                                <input required value={editSubjectForm.name} onChange={(e) => setEditSubjectForm({...editSubjectForm, name: e.target.value})} className="input-app py-2 text-sm font-semibold w-full" placeholder="Subject Name" />
+                                <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                                  Subject Name
+                                </label>
+                                <input
+                                  required
+                                  value={editSubjectForm.name}
+                                  onChange={(e) =>
+                                    setEditSubjectForm({
+                                      ...editSubjectForm,
+                                      name: e.target.value,
+                                    })
+                                  }
+                                  className="input-app py-2 text-sm font-semibold w-full"
+                                  placeholder="Subject Name"
+                                />
                               </div>
                               <div>
-                                <label className="text-xs font-semibold text-slate-700 mb-1 block">Subject Code</label>
-                                <input required value={editSubjectForm.code} onChange={(e) => setEditSubjectForm({...editSubjectForm, code: e.target.value})} className="input-app py-2 text-sm font-semibold uppercase w-full" placeholder="Code" />
+                                <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                                  Subject Code
+                                </label>
+                                <input
+                                  required
+                                  value={editSubjectForm.code}
+                                  onChange={(e) =>
+                                    setEditSubjectForm({
+                                      ...editSubjectForm,
+                                      code: e.target.value,
+                                    })
+                                  }
+                                  className="input-app py-2 text-sm font-semibold uppercase w-full"
+                                  placeholder="Code"
+                                />
                               </div>
                             </div>
                             <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100">
                               <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" className="w-4 h-4 accent-emerald-500" checked={editSubjectForm.isElective} onChange={(e) => setEditSubjectForm({...editSubjectForm, isElective: e.target.checked})} />
-                                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">Elective</span>
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 accent-emerald-500"
+                                  checked={editSubjectForm.isElective}
+                                  onChange={(e) =>
+                                    setEditSubjectForm({
+                                      ...editSubjectForm,
+                                      isElective: e.target.checked,
+                                    })
+                                  }
+                                />
+                                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">
+                                  Elective
+                                </span>
                               </label>
                               <div className="flex justify-end gap-2 text-right">
-                                <button type="button" onClick={() => setEditingSubjectId(null)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
-                                <button type="submit" className="px-5 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all active:scale-95">Save</button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSubjectId(null)}
+                                  className="px-5 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="px-5 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all active:scale-95"
+                                >
+                                  Save
+                                </button>
                               </div>
                             </div>
                           </form>
@@ -1503,20 +1694,24 @@ export default function HodDashboard({ user }) {
                               }}
                               className="flex items-center gap-1 p-2 rounded-xl text-sm font-bold text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600 focus:outline-none"
                             >
-                              <Edit2 size={16} /> <span className="hidden xs:inline">Edit</span>
+                              <Edit2 size={16} />{" "}
+                              <span className="hidden xs:inline">Edit</span>
                             </button>
                             <button
                               type="button"
                               title="Delete subject"
                               onClick={async () => {
-                                if (window.confirm(`Delete subject ${s.name}?`)) {
+                                if (
+                                  window.confirm(`Delete subject ${s.name}?`)
+                                ) {
                                   await deleteDoc(doc(db, "Subjects", s.id));
                                   fetchData();
                                 }
                               }}
                               className="flex items-center gap-1 p-2 rounded-xl text-sm font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none"
                             >
-                              <Trash2 size={16} /> <span className="hidden xs:inline">Delete</span>
+                              <Trash2 size={16} />{" "}
+                              <span className="hidden xs:inline">Delete</span>
                             </button>
                           </div>
                         </div>
@@ -1574,9 +1769,7 @@ export default function HodDashboard({ user }) {
                 </label>
                 <CustomSelect
                   value={allotForm.staff}
-                  onChange={(val) =>
-                    setAllotForm({ ...allotForm, staff: val })
-                  }
+                  onChange={(val) => setAllotForm({ ...allotForm, staff: val })}
                   options={allStaffList
                     .filter((s) => s.dept === allotForm.staffDept)
                     .map((s) => ({ value: s.name, label: s.name }))}
@@ -1599,7 +1792,7 @@ export default function HodDashboard({ user }) {
                         .filter(
                           (s) =>
                             s.department ===
-                            (allotForm.staffDept || user.dept) &&
+                              (allotForm.staffDept || user.dept) &&
                             !s.isElective,
                         )
                         .map((s) => ({
@@ -1613,7 +1806,7 @@ export default function HodDashboard({ user }) {
                         .filter(
                           (s) =>
                             s.department ===
-                            (allotForm.staffDept || user.dept) &&
+                              (allotForm.staffDept || user.dept) &&
                             s.isElective,
                         )
                         .map((s) => ({
@@ -1724,74 +1917,82 @@ export default function HodDashboard({ user }) {
                 </div>
               </div>
             </div>
-            
-            {monitorDept && monitorDept !== "All" && monitorStaff && monitorStaff !== "All" && monitorDivision && monitorDivision !== "All" ? (
+
+            {monitorDept &&
+            monitorDept !== "All" &&
+            monitorStaff &&
+            monitorStaff !== "All" &&
+            monitorDivision &&
+            monitorDivision !== "All" ? (
               <div className="flex-1 overflow-auto bg-slate-50/30">
                 <table className="w-full text-left border-collapse">
-                <thead className="bg-white sticky top-0 shadow-sm z-10 border-b border-slate-200">
-                  <tr>
-                    <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Date
-                    </th>
-                    <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Student
-                    </th>
-                    <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Target
-                    </th>
-                    <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
-                      Score
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100/80">
-                  {filteredFeedbacks.length === 0 ? (
+                  <thead className="bg-white sticky top-0 shadow-sm z-10 border-b border-slate-200">
                     <tr>
-                      <td
-                        colSpan="4"
-                        className="text-center py-16 text-slate-400 font-bold text-sm"
-                      >
-                        No feedback matching your filters found.
-                      </td>
+                      <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Date
+                      </th>
+                      <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Student
+                      </th>
+                      <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Target
+                      </th>
+                      <th className="p-4 px-6 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
+                        Score
+                      </th>
                     </tr>
-                  ) : (
-                    filteredFeedbacks.map((fb) => (
-                      <tr
-                        key={fb.id}
-                        className="hover:bg-blue-50/50 transition-colors group"
-                      >
-                        <td className="p-4 px-6 text-xs font-bold text-slate-600">
-                          {fb.createdAt?.toDate().toLocaleDateString("en-GB")}
-                        </td>
-                        <td className="p-4 px-6 font-extrabold text-slate-800 text-sm">
-                          {fb.studentName}
-                        </td>
-                        <td className="p-4 px-6 text-sm font-bold text-slate-700">
-                          {fb.staffName} <br />
-                          <span className="text-[10px] text-slate-400 font-extrabold tracking-widest uppercase mt-0.5 inline-block">
-                            {fb.subject}
-                          </span>
-                        </td>
-                        <td className="p-4 px-6 text-center">
-                          <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-blue-100 text-blue-700 shadow-sm border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            {(
-                              fb.totalScore / FEEDBACK_QUESTIONS.length
-                            ).toFixed(1)}
-                            /5.0
-                          </span>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100/80">
+                    {filteredFeedbacks.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan="4"
+                          className="text-center py-16 text-slate-400 font-bold text-sm"
+                        >
+                          No feedback matching your filters found.
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ) : (
+                      filteredFeedbacks.map((fb) => (
+                        <tr
+                          key={fb.id}
+                          className="hover:bg-blue-50/50 transition-colors group"
+                        >
+                          <td className="p-4 px-6 text-xs font-bold text-slate-600">
+                            {fb.createdAt?.toDate().toLocaleDateString("en-GB")}
+                          </td>
+                          <td className="p-4 px-6 font-extrabold text-slate-800 text-sm">
+                            {fb.studentName}
+                          </td>
+                          <td className="p-4 px-6 text-sm font-bold text-slate-700">
+                            {fb.staffName} <br />
+                            <span className="text-[10px] text-slate-400 font-extrabold tracking-widest uppercase mt-0.5 inline-block">
+                              {fb.subject}
+                            </span>
+                          </td>
+                          <td className="p-4 px-6 text-center">
+                            <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-blue-100 text-blue-700 shadow-sm border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                              {(
+                                fb.totalScore / FEEDBACK_QUESTIONS.length
+                              ).toFixed(1)}
+                              /5.0
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             ) : (
               <div className="p-16 text-center bg-blue-50/20 flex flex-col items-center justify-center">
                 <Activity size={48} className="text-blue-200 mb-4" />
-                <h3 className="text-lg font-black text-blue-900 uppercase tracking-tight">Select Filters to Monitor</h3>
+                <h3 className="text-lg font-black text-blue-900 uppercase tracking-tight">
+                  Select Filters to Monitor
+                </h3>
                 <p className="text-sm text-blue-600/70 font-medium mt-2 max-w-sm mx-auto">
-                  Please select a specific Department, Faculty member, and Division above to view live feedback data.
+                  Please select a specific Department, Faculty member, and
+                  Division above to view live feedback data.
                 </p>
               </div>
             )}
@@ -1830,7 +2031,11 @@ export default function HodDashboard({ user }) {
                       type="text"
                       maxLength={3}
                       value={semester}
-                      onChange={(e) => setSemester(e.target.value.replace(/[^IViv]/g, '').toUpperCase())}
+                      onChange={(e) =>
+                        setSemester(
+                          e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
+                        )
+                      }
                       className="input-app text-sm font-bold py-2.5"
                       placeholder="e.g. VI"
                     />
@@ -1877,8 +2082,8 @@ export default function HodDashboard({ user }) {
                       }}
                       options={(reportDept
                         ? allStaffList
-                          .filter((s) => s.dept === reportDept)
-                          .map((s) => s.name)
+                            .filter((s) => s.dept === reportDept)
+                            .map((s) => s.name)
                         : allStaffList.map((s) => s.name)
                       ).map((s) => ({ value: s, label: s }))}
                       placeholder="All Faculty"
@@ -1900,10 +2105,15 @@ export default function HodDashboard({ user }) {
                       />
                     </div>
                   )}
-
                 </div>
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    if (!acadYear || !semester) {
+                      notifyError("Academic Year and Semester are required before printing.");
+                      return;
+                    }
+                    window.print();
+                  }}
                   className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto"
                 >
                   <Printer size={18} strokeWidth={2.5} /> Print Report
@@ -1911,22 +2121,22 @@ export default function HodDashboard({ user }) {
               </div>
             </Card>
 
-            <div className="flex justify-center mb-6 animate-in fade-in duration-500 mt-2">
-                 <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
-                    <button
-                      onClick={() => setReportMode("faculty")}
-                      className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
-                    >
-                      Faculty Feedback
-                    </button>
-                    <button
-                      onClick={() => setReportMode("exit")}
-                      className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
-                    >
-                      Course Exit Survey
-                    </button>
-                 </div>
-               </div>
+            <div className="flex justify-center mb-6 mt-2 print:hidden print-hide" style={{ "@media print": { display: "none" } }}>
+              <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
+                <button
+                  onClick={() => setReportMode("faculty")}
+                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Faculty Feedback
+                </button>
+                <button
+                  onClick={() => setReportMode("exit")}
+                  className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "exit" ? "bg-emerald-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
+                >
+                  Course Exit Survey
+                </button>
+              </div>
+            </div>
 
             {reportStaff && totalStudents > 0 && qCount > 0 ? (
               <>
@@ -1938,8 +2148,8 @@ export default function HodDashboard({ user }) {
                         <PieChart size={24} /> Overall Feedback Distribution
                       </h2>
                       <p className="text-sm text-slate-500 mt-2">
-                        Rating distribution across {submittedStudents}{" "}
-                        submitted feedback{submittedStudents !== 1 ? "s" : ""}
+                        Rating distribution across {submittedStudents} submitted
+                        feedback{submittedStudents !== 1 ? "s" : ""}
                         {totalStudentsInClass > 0
                           ? ` out of ${totalStudentsInClass} students`
                           : ""}{" "}
@@ -1981,8 +2191,7 @@ export default function HodDashboard({ user }) {
                   </h2>
                   <p className="text-sm text-slate-600 mb-6">
                     Each donut chart shows the distribution of ratings for a
-                    specific criterion. Hover over segments to see exact
-                    counts.
+                    specific criterion. Hover over segments to see exact counts.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
                     {activeQuestions.map((q, idx) => (
@@ -2000,295 +2209,402 @@ export default function HodDashboard({ user }) {
 
                 {/* --- OFFICIAL MSBTE K15 TABLE (Visible in browser AND in print mode) --- */}
                 {reportMode !== "exit" && (
-                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0">
-                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
-                    <h3 className="text-sm">
-                      Maharashtra State Board of Technical Education
-                    </h3>
-                    <h2 className="text-lg mt-1">STUDENT FEEDBACK</h2>
-                    <p className="absolute right-8 top-8 font-bold text-sm">
-                      K15
-                    </p>
-                  </div>
-                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
-                    <p>
-                      Institute Name: Solapur Education Society's Polytechnic,
-                      Solapur
-                    </p>
-                    <div className="border-t border-black my-2"></div>
-                    <p>Academic Year :- {acadYear}</p>
-                    <div className="border-t border-black my-2"></div>
-                    <div className="flex justify-between">
-                      <p>Programme: {user.dept}</p>
-                      <p>Semester: {semester}</p>
-                      <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                  <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0">
+                    <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
+                      <h3 className="text-sm">
+                        Maharashtra State Board of Technical Education
+                      </h3>
+                      <h2 className="text-lg mt-1">STUDENT FEEDBACK</h2>
+                      <p className="absolute right-0 top-0 font-bold text-sm">
+                        K15
+                      </p>
                     </div>
-                    <div className="border-t border-black my-2"></div>
-                    <p className="pt-2">
-                      Name Of The Faculty :- {reportStaff}{" "}
-                      {reportSubject ? `(${reportSubject})` : ""}
-                    </p>
-                  </div>
-                  <table className="w-full text-xs border-collapse border border-black text-center mt-4">
-                    <thead>
-                      <tr className="font-bold bg-slate-50 print:bg-transparent">
-                        <th className="border border-black p-2 w-10">
-                          Sr.
-                          <br />
-                          No.
-                        </th>
-                        <th className="border border-black p-2 text-left">
-                          Parameter
-                        </th>
-                        <th className="border border-black p-2 w-16">
-                          5 - Excellent
-                        </th>
-                        <th className="border border-black p-2 w-16">
-                          4 - Very Good
-                        </th>
-                        <th className="border border-black p-2 w-16">
-                          3 - Good
-                        </th>
-                        <th className="border border-black p-2 w-16">
-                          2 - Satisfactory
-                        </th>
-                        <th className="border border-black p-2 w-16">
-                          1 - Not Satisfactory
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {FEEDBACK_QUESTIONS.map((q, idx) => (
-                        <tr key={idx}>
-                          <td className="border border-black p-1.5 font-bold">
-                            {idx + 1}
+                    <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4 print:pb-2 print:mb-2 print:space-y-1">
+                      <p>
+                        Institute Name: Solapur Education Society's Polytechnic,
+                        Solapur
+                      </p>
+                      <div className="border-t border-black my-2 print:my-0.5"></div>
+                      <p>Academic Year :- {acadYear}</p>
+                      <div className="border-t border-black my-2 print:my-0.5"></div>
+                      <div className="flex justify-between">
+                        <p>Programme: {user.dept}</p>
+                        <p>Semester: {semester}</p>
+                        <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                      </div>
+                      <div className="border-t border-black my-2 print:my-0.5"></div>
+                      <p className="pt-2 print:pt-1">
+                        Name Of The Faculty :- {reportStaff}{" "}
+                        {reportSubject ? `(${reportSubject})` : ""}
+                      </p>
+                    </div>
+                    <table className="w-full text-xs print:text-[10px] border-collapse border border-black text-center mt-4 print:mt-2">
+                      <thead>
+                        <tr className="font-bold bg-slate-50 print:bg-transparent">
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-10">
+                            Sr.
+                            <br />
+                            No.
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 text-left">
+                            Parameter
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-16">
+                            <span className="print:hidden">5 - Excellent</span>
+                            <span className="hidden print:inline">5 - Exc</span>
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-16">
+                            <span className="print:hidden">4 - Very Good</span>
+                            <span className="hidden print:inline">4 - VG</span>
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-16">
+                            3 - Good
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-16">
+                            <span className="print:hidden">2 - Satisfactory</span>
+                            <span className="hidden print:inline">2 - Sat</span>
+                          </th>
+                          <th className="border border-black p-2 print:py-1 print:px-1 w-16">
+                            <span className="print:hidden">1 - Not Satisfactory</span>
+                            <span className="hidden print:inline">1 - Not Sat</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {FEEDBACK_QUESTIONS.map((q, idx) => (
+                          <tr key={idx}>
+                          <td className="border border-black p-1.5 print:p-0.5 font-bold">
+                              {idx + 1}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5 text-left font-semibold">
+                              {q}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5">
+                              {scoreCounts[idx][5]}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5">
+                              {scoreCounts[idx][4]}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5">
+                              {scoreCounts[idx][3]}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5">
+                              {scoreCounts[idx][2]}
+                            </td>
+                            <td className="border border-black p-1.5 print:p-0.5">
+                              {scoreCounts[idx][1]}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="font-bold">
+                          <td
+                            colSpan="2"
+                            className="border border-black p-1.5 print:p-0.5 text-right"
+                          >
+                            Count
                           </td>
-                          <td className="border border-black p-1.5 text-left font-semibold">
-                            {q}
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colTotals[5]}
                           </td>
-                          <td className="border border-black p-1.5">
-                            {scoreCounts[idx][5]}
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colTotals[4]}
                           </td>
-                          <td className="border border-black p-1.5">
-                            {scoreCounts[idx][4]}
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colTotals[3]}
                           </td>
-                          <td className="border border-black p-1.5">
-                            {scoreCounts[idx][3]}
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colTotals[2]}
                           </td>
-                          <td className="border border-black p-1.5">
-                            {scoreCounts[idx][2]}
-                          </td>
-                          <td className="border border-black p-1.5">
-                            {scoreCounts[idx][1]}
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colTotals[1]}
                           </td>
                         </tr>
-                      ))}
-                      <tr className="font-bold">
-                        <td
-                          colSpan="2"
-                          className="border border-black p-1.5 text-right"
-                        >
-                          Count
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colTotals[5]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colTotals[4]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colTotals[3]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colTotals[2]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colTotals[1]}
-                        </td>
-                      </tr>
-                      <tr className="font-bold">
-                        <td
-                          colSpan="2"
-                          className="border border-black p-1.5 text-right"
-                        >
-                          Total Score
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colScores[5]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colScores[4]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colScores[3]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colScores[2]}
-                        </td>
-                        <td className="border border-black p-1.5">
-                          {colScores[1]}
-                        </td>
-                      </tr>
-                      <tr className="font-bold bg-slate-100 print:bg-transparent">
-                        <td
-                          colSpan="6"
-                          className="border border-black p-3 text-right text-sm"
-                        >
-                          Average Marks Obtained out of 25
-                        </td>
-                        <td className="border border-black p-3 text-sm">
-                          {marksOutOf25}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                        <tr className="font-bold">
+                          <td
+                            colSpan="2"
+                            className="border border-black p-1.5 print:p-0.5 text-right"
+                          >
+                            Total Score
+                          </td>
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colScores[5]}
+                          </td>
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colScores[4]}
+                          </td>
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colScores[3]}
+                          </td>
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colScores[2]}
+                          </td>
+                          <td className="border border-black p-1.5 print:p-0.5">
+                            {colScores[1]}
+                          </td>
+                        </tr>
+                        <tr className="font-bold bg-slate-100 print:bg-transparent">
+                          <td
+                            colSpan="6"
+                            className="border border-black p-3 print:py-1.5 print:px-2 text-right text-sm print:text-xs"
+                          >
+                            Average Marks Obtained out of 25
+                          </td>
+                          <td className="border border-black p-3 print:py-1.5 print:px-2 text-sm print:text-xs">
+                            {marksOutOf25}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
 
-                  <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
-                    <div className="text-left border-black p-4">
-                      <p>Signature of HoD :- ________________</p>
-                      <p className="mt-4">Name :- {user.name}</p>
+                    <div className="mt-12 flex justify-end pr-12 font-bold text-sm print:mt-28">
+                      <div className="text-left border-black p-4">
+                        <p>Signature of HoD :- ________________</p>
+                        <p className="mt-4">Name :- {user.name}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
                 )}
 
                 {reportMode === "exit" && (
-                <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase">
-                  <div className="text-center font-bold mb-4 border-b-2 border-black pb-4">
-                    <h3 className="text-sm">
-                      Maharashtra State Board of Technical Education
-                    </h3>
-                    <h2 className="text-lg mt-1">COURSE EXIT SURVEY REPORT</h2>
-                  </div>
-                  <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
-                    <p>
-                      Institute Name: Solapur Education Society&#39;s Polytechnic,
-                      Solapur
-                    </p>
-                    <div className="border-t border-black my-2"></div>
-                    <div className="flex justify-between">
-                      <p>Course :- {reportSubject}</p>
-                      <p>Academic Year :- {acadYear}</p>
+                  <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0 uppercase">
+                    <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
+                      <h3 className="text-sm">
+                        Maharashtra State Board of Technical Education
+                      </h3>
+                      <h2 className="text-lg mt-1">
+                        COURSE EXIT SURVEY REPORT
+                      </h2>
                     </div>
-                    <div className="border-t border-black my-2"></div>
-                    <div className="flex justify-between">
-                      <p>Programme: {user.dept}</p>
-                      <p>Semester: {semester}</p>
-                      <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                    <div className="text-sm font-bold space-y-2 border-b-2 border-black pb-4 mb-4">
+                      <p>
+                        Institute Name: Solapur Education Society&#39;s
+                        Polytechnic, Solapur
+                      </p>
+                      <div className="border-t border-black my-2"></div>
+                      <div className="flex justify-between">
+                        <p>Course :- {reportSubject}</p>
+                        <p>Academic Year :- {acadYear}</p>
+                      </div>
+                      <div className="border-t border-black my-2"></div>
+                      <div className="flex justify-between">
+                        <p>Programme: {user.dept}</p>
+                        <p>Semester: {semester}</p>
+                        <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
+                      </div>
+                      <div className="border-t border-black my-2"></div>
+                      <p className="pt-2">
+                        Name Of The Faculty :- {reportStaff}
+                      </p>
                     </div>
-                    <div className="border-t border-black my-2"></div>
-                    <p className="pt-2">
-                      Name Of The Faculty :- {reportStaff}
-                    </p>
-                  </div>
-                  <table className="w-full text-[11px] border-collapse border border-black text-center mt-4">
-                    <thead>
-                      <tr className="font-bold bg-slate-50 print:bg-transparent">
-                        <th className="border border-black p-2 w-10">Sr. No.</th>
-                        <th className="border border-black p-2 text-left">Parameters (Course Outcomes)</th>
-                        <th className="border border-black p-2 w-14">Excellent 5</th>
-                        <th className="border border-black p-2 w-14">Very good 4</th>
-                        <th className="border border-black p-2 w-14">Good 3</th>
-                        <th className="border border-black p-2 w-14">Satisfactory 2</th>
-                        <th className="border border-black p-2 w-14">Average 1</th>
-                        <th className="border border-black p-2 w-14">Max. Marks</th>
-                        <th className="border border-black p-2 w-14">TOTAL</th>
-                        <th className="border border-black p-2 w-14">%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeQuestions.map((q, idx) => {
-                        const rowTotal = (scoreCounts[idx][5] * 5) + (scoreCounts[idx][4] * 4) + (scoreCounts[idx][3] * 3) + (scoreCounts[idx][2] * 2) + (scoreCounts[idx][1] * 1);
-                        const rowMax = totalStudents * 5;
-                        const rowPerc = rowMax > 0 ? ((rowTotal / rowMax) * 100).toFixed(1) : "0.0";
-                        return (
-                          <tr key={idx}>
-                            <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
-                            <td className="border border-black p-1.5 text-left font-semibold">{q}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][5]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][4]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][3]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][2]}</td>
-                            <td className="border border-black p-1.5">{scoreCounts[idx][1]}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowMax}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowTotal}</td>
-                            <td className="border border-black p-1.5 font-bold">{rowPerc}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                    <table className="w-full text-[11px] border-collapse border border-black text-center mt-4">
+                      <thead>
+                        <tr className="font-bold bg-slate-50 print:bg-transparent">
+                          <th className="border border-black p-2 w-10">
+                            Sr. No.
+                          </th>
+                          <th className="border border-black p-2 text-left">
+                            Parameters (Course Outcomes)
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Excellent 5
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Very good 4
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Good 3
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Satisfactory 2
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Average 1
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Max. Marks
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            TOTAL
+                          </th>
+                          <th className="border border-black p-2 w-14">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeQuestions.map((q, idx) => {
+                          const rowTotal =
+                            scoreCounts[idx][5] * 5 +
+                            scoreCounts[idx][4] * 4 +
+                            scoreCounts[idx][3] * 3 +
+                            scoreCounts[idx][2] * 2 +
+                            scoreCounts[idx][1] * 1;
+                          const rowMax = totalStudents * 5;
+                          const rowPerc =
+                            rowMax > 0
+                              ? ((rowTotal / rowMax) * 100).toFixed(1)
+                              : "0.0";
+                          return (
+                            <tr key={idx}>
+                              <td className="border border-black p-1.5 font-bold">
+                                {idx + 1}
+                              </td>
+                              <td className="border border-black p-1.5 text-left font-semibold">
+                                {q}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {scoreCounts[idx][5]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {scoreCounts[idx][4]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {scoreCounts[idx][3]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {scoreCounts[idx][2]}
+                              </td>
+                              <td className="border border-black p-1.5">
+                                {scoreCounts[idx][1]}
+                              </td>
+                              <td className="border border-black p-1.5 font-bold">
+                                {rowMax}
+                              </td>
+                              <td className="border border-black p-1.5 font-bold">
+                                {rowTotal}
+                              </td>
+                              <td className="border border-black p-1.5 font-bold">
+                                {rowPerc}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
 
-                  <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
-                    <div className="text-left border-black p-4">
-                      <p>Signature of HoD :- ________________</p>
-                      <p className="mt-4">Name :- {user.name}</p>
+                    <div className="mt-20 flex justify-end pr-12 font-bold text-sm">
+                      <div className="text-left border-black p-4">
+                        <p>Signature of HoD :- ________________</p>
+                        <p className="mt-4">Name :- {user.name}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
                 )}
 
                 {reportMode === "institution" && (
                   <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase font-sans">
                     <div className="text-center font-bold mb-6 border-b-2 border-black pb-6">
-                      <h3 className="text-sm tracking-tight uppercase">Solapur Education Society's Polytechnic, Solapur</h3>
-                      <h2 className="text-xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">STUDENT SATISFACTION FEEDBACK</h2>
-                      <p className="mt-2 text-sm italic">Annual Institutional Survey • {user.dept} Dept</p>
+                      <h3 className="text-sm tracking-tight uppercase">
+                        Solapur Education Society's Polytechnic, Solapur
+                      </h3>
+                      <h2 className="text-xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">
+                        STUDENT SATISFACTION FEEDBACK
+                      </h2>
+                      <p className="mt-2 text-sm italic">
+                        Annual Institutional Survey • {user.dept} Dept
+                      </p>
                     </div>
-                    
+
                     <div className="mb-6 grid grid-cols-2 gap-4 text-sm font-bold px-2">
-                       <p>Academic Year : {acadYear}</p>
-                       <p className="text-right">Report Date: {new Date().toLocaleDateString("en-GB")}</p>
+                      <p>Academic Year : {acadYear}</p>
+                      <p className="text-right">
+                        Report Date: {new Date().toLocaleDateString("en-GB")}
+                      </p>
                     </div>
 
                     <table className="w-full text-[10px] border-collapse border-2 border-black text-center">
                       <thead>
                         <tr className="font-extrabold bg-slate-100 print:bg-transparent border-b-2 border-black">
-                          <th className="border border-black p-2 w-10 text-[11px]">Sr. No.</th>
-                          <th className="border border-black p-2 text-left min-w-[200px] text-[11px]">Parameters</th>
-                          <th className="border border-black p-2 w-14">Excellent 5</th>
-                          <th className="border border-black p-2 w-14">Very good 4</th>
-                          <th className="border border-black p-2 w-14">Good 3</th>
-                          <th className="border border-black p-2 w-14">Satisfactory 2</th>
-                          <th className="border border-black p-2 w-14">Average 1</th>
-                          <th className="border border-black p-2 w-14">Max. Marks</th>
-                          <th className="border border-black p-2 w-14">TOTAL</th>
+                          <th className="border border-black p-2 w-10 text-[11px]">
+                            Sr. No.
+                          </th>
+                          <th className="border border-black p-2 text-left min-w-[200px] text-[11px]">
+                            Parameters
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Excellent 5
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Very good 4
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Good 3
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Satisfactory 2
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Average 1
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            Max. Marks
+                          </th>
+                          <th className="border border-black p-2 w-14">
+                            TOTAL
+                          </th>
                           <th className="border border-black p-2 w-14">%</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(() => {
                           // Filter responses for institution feedback (department specific for HOD)
-                          const instData = instResponses.filter(r => 
-                            r.department === user.dept && 
-                            (!acadYear || r.academicYear === acadYear)
+                          const instData = instResponses.filter(
+                            (r) =>
+                              r.department === user.dept &&
+                              (!acadYear || r.academicYear === acadYear),
                           );
-                          
+
                           const respondentsCount = instData.length;
-                          
+
                           return INSTITUTION_QUESTIONS.map((q, idx) => {
                             const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-                            instData.forEach(r => {
+                            instData.forEach((r) => {
                               const val = parseInt(r.scores[idx]);
                               if (counts[val] !== undefined) counts[val]++;
                             });
 
-                            const totalScore = (counts[5]*5) + (counts[4]*4) + (counts[3]*3) + (counts[2]*2) + (counts[1]*1);
+                            const totalScore =
+                              counts[5] * 5 +
+                              counts[4] * 4 +
+                              counts[3] * 3 +
+                              counts[2] * 2 +
+                              counts[1] * 1;
                             const maxMarks = respondentsCount * 5;
-                            const percentage = maxMarks > 0 ? ((totalScore / maxMarks) * 100).toFixed(1) : "0.0";
-                            
+                            const percentage =
+                              maxMarks > 0
+                                ? ((totalScore / maxMarks) * 100).toFixed(1)
+                                : "0.0";
+
                             return (
                               <tr key={idx} className="border-b border-black">
-                                <td className="border border-black p-1.5 font-bold">{idx + 1}</td>
-                                <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">{q}</td>
-                                <td className="border border-black p-1.5">{counts[5]}</td>
-                                <td className="border border-black p-1.5">{counts[4]}</td>
-                                <td className="border border-black p-1.5">{counts[3]}</td>
-                                <td className="border border-black p-1.5">{counts[2]}</td>
-                                <td className="border border-black p-1.5">{counts[1]}</td>
-                                <td className="border border-black p-1.5 font-black">{maxMarks}</td>
-                                <td className="border border-black p-1.5 font-black">{totalScore}</td>
-                                <td className="border border-black p-1.5 font-black">{percentage}</td>
+                                <td className="border border-black p-1.5 font-bold">
+                                  {idx + 1}
+                                </td>
+                                <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">
+                                  {q}
+                                </td>
+                                <td className="border border-black p-1.5">
+                                  {counts[5]}
+                                </td>
+                                <td className="border border-black p-1.5">
+                                  {counts[4]}
+                                </td>
+                                <td className="border border-black p-1.5">
+                                  {counts[3]}
+                                </td>
+                                <td className="border border-black p-1.5">
+                                  {counts[2]}
+                                </td>
+                                <td className="border border-black p-1.5">
+                                  {counts[1]}
+                                </td>
+                                <td className="border border-black p-1.5 font-black">
+                                  {maxMarks}
+                                </td>
+                                <td className="border border-black p-1.5 font-black">
+                                  {totalScore}
+                                </td>
+                                <td className="border border-black p-1.5 font-black">
+                                  {percentage}
+                                </td>
                               </tr>
                             );
                           });
@@ -2296,26 +2612,28 @@ export default function HodDashboard({ user }) {
                       </tbody>
                     </table>
 
-                    <div className="mt-20 flex justify-end pr-12 font-black text-sm print:mt-32">
+                    <div className="mt-12 flex justify-end pr-12 font-black text-sm print:mt-28">
                       <div className="text-center">
-                         <div className="w-56 border-b-2 border-dotted border-black mb-1"></div>
-                         <p>Department Head Signature</p>
+                        <div className="w-56 border-b-2 border-dotted border-black mb-1"></div>
+                        <p>Department Head Signature</p>
                       </div>
                     </div>
                   </div>
                 )}
 
-
                 {/* --- K15 REPORT VISUALIZATION (Admin style charts - Hidden when printing) --- */}
                 <div className="mt-12 print:hidden mb-12">
                   <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
-                    <PieChart size={24} /> {reportMode === "exit" ? "Course Exit Analytics" : "K-15 Report Visualization"}
+                    <PieChart size={24} />{" "}
+                    {reportMode === "exit"
+                      ? "Course Exit Analytics"
+                      : "K-15 Report Visualization"}
                   </h2>
                   <div className="grid md:grid-cols-3 gap-6">
                     <Card className="md:col-span-1 p-8 flex flex-col items-center justify-center border-indigo-100">
                       <h3 className="text-sm font-black uppercase tracking-widest text-slate-500 mb-6 flex items-center gap-2">
-                        <PieChart size={18} className="text-indigo-600" />{" "}
-                        Count Distribution
+                        <PieChart size={18} className="text-indigo-600" /> Count
+                        Distribution
                       </h3>
                       <div className="grid grid-cols-2 gap-2 w-full mb-6 text-center opacity-90">
                         <div className="bg-indigo-50 text-indigo-800 p-2 rounded-xl border border-indigo-100 font-bold text-xs flex flex-col justify-center items-center">
@@ -2391,9 +2709,7 @@ export default function HodDashboard({ user }) {
                         </h3>
                         <h2 className="text-3xl font-black text-indigo-700">
                           {overallAverageOutOf5}{" "}
-                          <span className="text-sm text-slate-400">
-                            / 5.0
-                          </span>
+                          <span className="text-sm text-slate-400">/ 5.0</span>
                         </h2>
                       </div>
                       <div className="space-y-3 max-h-[500px] overflow-y-auto pr-4">
@@ -2404,9 +2720,7 @@ export default function HodDashboard({ user }) {
                             scoreCounts[idx][3] * 3 +
                             scoreCounts[idx][2] * 2 +
                             scoreCounts[idx][1] * 1;
-                          const qAvg = (qTotalScore / totalStudents).toFixed(
-                            1,
-                          );
+                          const qAvg = (qTotalScore / totalStudents).toFixed(1);
                           const widthPercent = (qAvg / 5) * 100;
                           const numAvg = parseFloat(qAvg);
                           const barColor =
@@ -2425,7 +2739,9 @@ export default function HodDashboard({ user }) {
                                 <span className="leading-snug">
                                   {idx + 1}. {q}
                                 </span>
-                                <span className="shrink-0 font-black text-slate-800">{qAvg}</span>
+                                <span className="shrink-0 font-black text-slate-800">
+                                  {qAvg}
+                                </span>
                               </div>
                               <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                                 <div
@@ -2444,7 +2760,9 @@ export default function HodDashboard({ user }) {
             ) : reportStaff ? (
               <div className="text-center py-20 opacity-30">
                 <h2 className="text-2xl font-black uppercase">
-                  {reportMode === "exit" && !reportSubject ? "Select a subject to view Course Exit Analytics" : "No Data Available"}
+                  {reportMode === "exit" && !reportSubject
+                    ? "Select a subject to view Course Exit Analytics"
+                    : "No Data Available"}
                 </h2>
               </div>
             ) : (
@@ -2500,10 +2818,11 @@ export default function HodDashboard({ user }) {
                   );
                   setIsStaffPortalOpen(s);
                 }}
-                className={`px-10 py-4 rounded-2xl font-bold text-lg text-white transition-all shadow-xl active:scale-95 uppercase tracking-wide flex items-center justify-center mx-auto gap-3 ${isStaffPortalOpen
+                className={`px-10 py-4 rounded-2xl font-bold text-lg text-white transition-all shadow-xl active:scale-95 uppercase tracking-wide flex items-center justify-center mx-auto gap-3 ${
+                  isStaffPortalOpen
                     ? "bg-gradient-to-b from-red-500 to-rose-600 shadow-red-500/30 hover:shadow-red-500/50"
                     : "bg-gradient-to-b from-violet-500 to-indigo-600 shadow-violet-500/30 hover:shadow-violet-500/50"
-                  }`}
+                }`}
               >
                 {isStaffPortalOpen
                   ? "Close Portal for Staff"
