@@ -52,6 +52,13 @@ export default function StaffDashboard({ user }) {
   const [feedbacks, setFeedbacks] = useState([]);
   const [exitForms, setExitForms] = useState({});
   const [exitResponses, setExitResponses] = useState([]);
+  const [schemeMappings, setSchemeMappings] = useState({
+    year1: "",
+    year2: "",
+    year3: "",
+  });
+  const [departmentCode, setDepartmentCode] = useState("");
+  const [selectedReportClass, setSelectedReportClass] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
   const [activeTab, setActiveTab] = useState("exit-forms");
   const [reportTab, setReportTab] = useState("faculty"); // "faculty" | "exit"
@@ -64,6 +71,26 @@ export default function StaffDashboard({ user }) {
         const staffOpen =
           settingsSnap.exists() && settingsSnap.data().staffPortalOpen === true;
         setIsStaffPortalOpen(staffOpen);
+
+        const mapSnap = await getDoc(doc(db, "Settings", "SchemeMapping"));
+        if (mapSnap.exists()) {
+          setSchemeMappings(mapSnap.data());
+        } else {
+          setSchemeMappings({
+            year1: "K-Scheme",
+            year2: "K-Scheme",
+            year3: "K-Scheme",
+          });
+        }
+
+        const deptSnap = await getDocs(collection(db, "Departments"));
+        const deptData = deptSnap.docs.map((d) => d.data());
+        const matchedDept = deptData.find((d) => d.name === user.dept);
+        setDepartmentCode(
+          String(matchedDept?.code || "")
+            .trim()
+            .toUpperCase(),
+        );
 
         // 1. Fetch Subjects Allotted to this specific teacher
         const allocQ = query(
@@ -124,6 +151,41 @@ export default function StaffDashboard({ user }) {
   const isExitMode = reportTab === "exit";
   const sourceFeedbacks = isExitMode ? exitResponses : feedbacks;
 
+  const reportClassOptions = React.useMemo(() => {
+    const allottedClasses = Array.from(
+      new Set(allocations.map((a) => classKey(a)).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b));
+
+    const deptCode = String(departmentCode || "")
+      .trim()
+      .toUpperCase() || "XX";
+    const extractL = (s) =>
+      s ? String(s).trim().charAt(0).toUpperCase() : "K";
+    const l1 = extractL(schemeMappings?.year1);
+    const l2 = extractL(schemeMappings?.year2);
+    const l3 = extractL(schemeMappings?.year3);
+    const letters = { 1: l1, 2: l1, 3: l2, 4: l2, 5: l3, 6: l3 };
+
+    return [1, 2, 3, 4, 5, 6].map((semNo) => {
+      const cls = `${deptCode}${semNo}${letters[semNo]}`;
+      const isAllotted = allottedClasses.includes(cls);
+      return {
+        value: cls,
+        label: isAllotted
+          ? `${cls} (Subjects allotted)`
+          : `${cls} (No subjects allotted)`,
+      };
+    });
+  }, [allocations, departmentCode, schemeMappings]);
+
+  const filteredReportAllocations = selectedReportClass
+    ? allocations.filter((a) => classKey(a) === selectedReportClass)
+    : [];
+
+  useEffect(() => {
+    setSelectedSubject("");
+  }, [selectedReportClass]);
+
   // Filter feedbacks for the currently selected dropdown option
   const currentFeedbacks = sourceFeedbacks.filter(
     (f) => subjectClassValue(f) === selectedSubject,
@@ -157,10 +219,16 @@ export default function StaffDashboard({ user }) {
       // Calculate sum for each specific question
       Object.keys(feedback.scores).forEach((qIndex) => {
         const rating = parseInt(feedback.scores[qIndex]);
-        questionAverages[qIndex] += rating;
+        if (questionAverages[qIndex] !== undefined) {
+          questionAverages[qIndex] += rating;
+        }
         // Track rating counts
-        if (scoreCounts[qIndex][rating] !== undefined)
+        if (
+          scoreCounts[qIndex] &&
+          scoreCounts[qIndex][rating] !== undefined
+        ) {
           scoreCounts[qIndex][rating]++;
+        }
       });
       // Add to grand total
       totalScoreSum += feedback.totalScore;
@@ -172,7 +240,8 @@ export default function StaffDashboard({ user }) {
     }
     // Max possible score per student is qCount questions * 5 points
     // We want the overall average out of 5
-    overallAverage = (totalScoreSum / totalResponses / qCount).toFixed(1);
+    overallAverage =
+      qCount > 0 ? (totalScoreSum / totalResponses / qCount).toFixed(1) : "0.0";
   }
 
   if (loading)
@@ -219,10 +288,10 @@ export default function StaffDashboard({ user }) {
               {user.dept}
             </p>
           </div>
-          <div className="flex bg-white/10 p-1.5 rounded-xl backdrop-blur-sm ring-1 ring-white/20 shadow-inner overflow-x-auto">
+          <div className="flex w-full md:w-auto bg-white/10 p-1.5 rounded-xl backdrop-blur-sm ring-1 ring-white/20 shadow-inner overflow-x-auto">
             <button
               onClick={() => setActiveTab("exit-forms")}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex-1 md:flex-none justify-center ${
                 activeTab === "exit-forms"
                   ? "bg-white text-blue-900 shadow-md ring-1 ring-black/5"
                   : "text-white/80 hover:text-white hover:bg-white/10"
@@ -233,7 +302,7 @@ export default function StaffDashboard({ user }) {
             </button>
             <button
               onClick={() => setActiveTab("reports")}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap flex-1 md:flex-none justify-center ${
                 activeTab === "reports"
                   ? "bg-white text-blue-900 shadow-md ring-1 ring-black/5"
                   : "text-white/80 hover:text-white hover:bg-white/10"
@@ -301,18 +370,42 @@ export default function StaffDashboard({ user }) {
                       Subject and class
                     </label>
                     <CustomSelect
-                      value={selectedSubject}
-                      onChange={(val) => setSelectedSubject(val)}
-                      options={allocations.map((alloc) => {
-                        const ck = classKey(alloc);
-                        return {
-                          value: subjectClassValue(alloc),
-                          label: `${alloc.subject}${ck ? ` (${ck})` : " (class not set)"}`,
-                        };
-                      })}
-                      placeholder="Select Subject"
+                      value={selectedReportClass}
+                      onChange={(val) => setSelectedReportClass(val)}
+                      options={reportClassOptions}
+                      placeholder="Choose class / semester..."
                     />
-                    {selectedSubject && (
+                    <div className="mt-3 space-y-2">
+                      {!selectedReportClass ? (
+                        <p className="text-xs font-semibold text-slate-500 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2">
+                          Select class first
+                        </p>
+                      ) : filteredReportAllocations.length === 0 ? (
+                        <p className="text-xs font-semibold text-amber-700 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                          No subjects allotted for this class.
+                        </p>
+                      ) : (
+                        filteredReportAllocations.map((alloc) => {
+                          const subjectValue = subjectClassValue(alloc);
+                          const isSelected = selectedSubject === subjectValue;
+                          return (
+                            <button
+                              key={subjectValue}
+                              type="button"
+                              onClick={() => setSelectedSubject(subjectValue)}
+                              className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-bold transition-all ${
+                                isSelected
+                                  ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40"
+                              }`}
+                            >
+                              {alloc.subject}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                    {selectedReportClass && selectedSubject && (
                       <div className="mt-4 flex gap-1 p-1 bg-slate-200/50 rounded-xl">
                         <button
                           onClick={() => setReportTab("faculty")}
@@ -399,7 +492,7 @@ export default function StaffDashboard({ user }) {
                     ) : (
                       <div>
                         {/* Overall stats */}
-                        <div className="mb-6 grid grid-cols-2 gap-4">
+                        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="rounded-xl bg-blue-50 p-4 text-center">
                             <p className="text-xs font-semibold text-blue-600 upper uppercase">
                               Total Responses
@@ -506,6 +599,8 @@ export default function StaffDashboard({ user }) {
           user={user}
           exitForms={exitForms}
           setExitForms={setExitForms}
+        schemeMappings={schemeMappings}
+        departmentCode={departmentCode}
           notify={{ success, notifyError, warning }}
           subjectClassValue={subjectClassValue}
           classKey={classKey}
@@ -521,14 +616,54 @@ function CourseExitBuilder({
   user,
   exitForms,
   setExitForms,
+  schemeMappings,
+  departmentCode,
   notify,
   subjectClassValue,
   classKey,
 }) {
+  const [selectedBuilderClass, setSelectedBuilderClass] = useState("");
   const [selectedBuilderSubject, setSelectedBuilderSubject] = useState("");
   const [questions, setQuestions] = useState([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTogglingPortal, setIsTogglingPortal] = useState(false);
+  const [showClearAllModal, setShowClearAllModal] = useState(false);
+
+  const uniqueBuilderClasses = Array.from(
+    new Set(allocations.map((a) => classKey(a)).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const allSemesterClassOptions = React.useMemo(() => {
+    const deptCode = String(departmentCode || "")
+      .trim()
+      .toUpperCase() || "XX";
+    const extractL = (s) =>
+      s ? String(s).trim().charAt(0).toUpperCase() : "K";
+    const l1 = extractL(schemeMappings?.year1);
+    const l2 = extractL(schemeMappings?.year2);
+    const l3 = extractL(schemeMappings?.year3);
+    const letters = { 1: l1, 2: l1, 3: l2, 4: l2, 5: l3, 6: l3 };
+
+    return [1, 2, 3, 4, 5, 6].map((semNo) => {
+      const cls = `${deptCode}${semNo}${letters[semNo]}`;
+      const isAllotted = uniqueBuilderClasses.includes(cls);
+      return {
+        value: cls,
+        label: isAllotted
+          ? `${cls} (Subjects allotted)`
+          : `${cls} (No subjects allotted)`,
+      };
+    });
+  }, [departmentCode, schemeMappings, uniqueBuilderClasses]);
+
+  const filteredBuilderAllocations = selectedBuilderClass
+    ? allocations.filter((a) => classKey(a) === selectedBuilderClass)
+    : [];
+
+  useEffect(() => {
+    setSelectedBuilderSubject("");
+  }, [selectedBuilderClass]);
 
   // Load existing form data when subject changes
   useEffect(() => {
@@ -542,10 +677,7 @@ function CourseExitBuilder({
       setQuestions(existing.questions);
       setIsFormOpen(!!existing.isOpen);
     } else {
-      setQuestions([
-        "Course objectives were clearly communicated.",
-        "The subject helped improve practical knowledge.",
-      ]);
+      setQuestions([]);
       setIsFormOpen(false);
     }
   }, [selectedBuilderSubject, exitForms]);
@@ -564,6 +696,58 @@ function CourseExitBuilder({
     const newQs = [...questions];
     newQs.splice(index, 1);
     setQuestions(newQs);
+  };
+
+  const handleClearAllQuestions = () => {
+    if (questions.length === 0) return;
+    setShowClearAllModal(true);
+  };
+
+  const confirmClearAllQuestions = async () => {
+    if (!selectedBuilderSubject) {
+      setShowClearAllModal(false);
+      return;
+    }
+    const alloc = allocations.find(
+      (a) => subjectClassValue(a) === selectedBuilderSubject,
+    );
+    if (!alloc) {
+      notify.warning("Please select a valid subject first.");
+      setShowClearAllModal(false);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const formKey = subjectClassValue(alloc);
+      const targetClass = classKey(alloc);
+      const existing = exitForms[formKey];
+      const formDocId =
+        existing?.id ||
+        `${user.name}_${alloc.subject}_${targetClass}`.replace(/\s+/g, "_");
+      const payload = {
+        staffName: user.name,
+        department: alloc.department || user.dept,
+        subject: alloc.subject,
+        targetClass: targetClass,
+        questions: [],
+        isOpen: isFormOpen,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, "CourseExitForms", formDocId), payload);
+      setExitForms((prev) => ({
+        ...prev,
+        [formKey]: { id: formDocId, ...payload },
+      }));
+      setQuestions([]);
+      notify.success("All questions cleared and saved.");
+    } catch (e) {
+      console.error(e);
+      notify.notifyError("Failed to clear questions.");
+    }
+    setShowClearAllModal(false);
+    setIsSaving(false);
   };
 
   const handleSaveForm = async () => {
@@ -619,6 +803,55 @@ function CourseExitBuilder({
     setIsSaving(false);
   };
 
+  const handleTogglePortalState = async () => {
+    if (!selectedBuilderSubject) return;
+    const alloc = allocations.find(
+      (a) => subjectClassValue(a) === selectedBuilderSubject,
+    );
+    if (!alloc) {
+      notify.warning("Please select a valid subject first.");
+      return;
+    }
+
+    const nextOpenState = !isFormOpen;
+    setIsTogglingPortal(true);
+    try {
+      const formKey = subjectClassValue(alloc);
+      const targetClass = classKey(alloc);
+      const existing = exitForms[formKey];
+      const safeQuestions =
+        existing?.questions ||
+        questions.map((q) => q.trim()).filter((q) => q.length > 0);
+      const formDocId =
+        existing?.id ||
+        `${user.name}_${alloc.subject}_${targetClass}`.replace(/\s+/g, "_");
+
+      const payload = {
+        staffName: user.name,
+        department: alloc.department || user.dept,
+        subject: alloc.subject,
+        targetClass: targetClass,
+        questions: safeQuestions,
+        isOpen: nextOpenState,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, "CourseExitForms", formDocId), payload);
+      setExitForms((prev) => ({
+        ...prev,
+        [formKey]: { id: formDocId, ...payload },
+      }));
+      setIsFormOpen(nextOpenState);
+      notify.success(
+        `Responses ${nextOpenState ? "opened" : "paused"} successfully.`,
+      );
+    } catch (e) {
+      console.error(e);
+      notify.notifyError("Failed to update portal status.");
+    }
+    setIsTogglingPortal(false);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="grid lg:grid-cols-3 gap-7">
@@ -638,18 +871,43 @@ function CourseExitBuilder({
             <div className="bg-slate-50/80 p-5">
               <label className="sr-only">Subject and class selection</label>
               <CustomSelect
-                value={selectedBuilderSubject}
-                onChange={setSelectedBuilderSubject}
-                options={allocations.map((alloc) => {
-                  const ck = classKey(alloc);
-                  const isExisting = !!exitForms[subjectClassValue(alloc)];
-                  return {
-                    value: subjectClassValue(alloc),
-                    label: `${alloc.subject}${ck ? ` (${ck})` : ""} ${isExisting ? "(✓ Saved)" : ""}`,
-                  };
-                })}
-                placeholder="Choose subject..."
+                value={selectedBuilderClass}
+                onChange={setSelectedBuilderClass}
+                options={allSemesterClassOptions}
+                placeholder="Choose class / semester..."
               />
+              <div className="mt-3 space-y-2">
+                {!selectedBuilderClass ? (
+                  <p className="text-xs font-semibold text-slate-500 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2">
+                    Select class first
+                  </p>
+                ) : filteredBuilderAllocations.length === 0 ? (
+                  <p className="text-xs font-semibold text-amber-700 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    No subjects allotted for this class.
+                  </p>
+                ) : (
+                  filteredBuilderAllocations.map((alloc) => {
+                    const subjectValue = subjectClassValue(alloc);
+                    const isExisting = !!exitForms[subjectValue];
+                    const isSelected = selectedBuilderSubject === subjectValue;
+                    return (
+                      <button
+                        key={subjectValue}
+                        type="button"
+                        onClick={() => setSelectedBuilderSubject(subjectValue)}
+                        className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-bold transition-all ${
+                          isSelected
+                            ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40"
+                        }`}
+                      >
+                        {alloc.subject}
+                        {isExisting ? " (Saved)" : ""}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             {selectedBuilderSubject && (
@@ -660,7 +918,8 @@ function CourseExitBuilder({
                       Portal Controls
                     </p>
                     <button
-                      onClick={() => setIsFormOpen(!isFormOpen)}
+                      onClick={handleTogglePortalState}
+                      disabled={isTogglingPortal}
                       className={`transition-colors ${isFormOpen ? "text-emerald-500 hover:text-emerald-600" : "text-slate-400 hover:text-slate-500"}`}
                       title={isFormOpen ? "Close Portal" : "Open Portal"}
                     >
@@ -743,6 +1002,14 @@ function CourseExitBuilder({
                 >
                   <Plus size={16} strokeWidth={2.5} /> Add Question
                 </Button>
+                <Button
+                  variant="ghost"
+                  onClick={handleClearAllQuestions}
+                  disabled={questions.length === 0}
+                  className="bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-red-200/50 shrink-0 self-start sm:self-auto"
+                >
+                  <Trash2 size={16} strokeWidth={2.5} /> Clear All
+                </Button>
               </div>
 
               <div className="flex-1 overflow-y-auto bg-gradient-to-b from-slate-50/50 to-white p-5 md:p-7 space-y-4">
@@ -820,6 +1087,35 @@ function CourseExitBuilder({
           )}
         </div>
       </div>
+      {showClearAllModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-extrabold text-slate-900">
+              Clear all questions?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              This will remove all questions from this survey and save
+              immediately.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearAllModal(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmClearAllQuestions}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

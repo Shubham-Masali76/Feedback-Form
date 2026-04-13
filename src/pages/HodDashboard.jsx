@@ -79,6 +79,7 @@ export default function HodDashboard({ user }) {
   const [editSubjectForm, setEditSubjectForm] = useState({
     name: "",
     code: "",
+    semester: "",
     isElective: false,
   });
   const [stdForm, setStdForm] = useState({
@@ -92,8 +93,10 @@ export default function HodDashboard({ user }) {
   const [subForm, setSubForm] = useState({
     name: "",
     code: "",
+    semester: "",
     isElective: false,
   });
+  const [subjectSemesterFilter, setSubjectSemesterFilter] = useState("");
   const [allotForm, setAllotForm] = useState({
     staffDept: user.dept,
     staff: "",
@@ -146,6 +149,10 @@ export default function HodDashboard({ user }) {
   const [promoteSource, setPromoteSource] = useState("");
   const [promoteTarget, setPromoteTarget] = useState("");
   const [deleteClassTarget, setDeleteClassTarget] = useState("");
+  const [resetClassTarget, setResetClassTarget] = useState("");
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [promoteCandidates, setPromoteCandidates] = useState([]);
+  const [excludedFromPromotion, setExcludedFromPromotion] = useState(new Set());
 
   const fetchData = useCallback(async () => {
     try {
@@ -270,41 +277,29 @@ export default function HodDashboard({ user }) {
 
       setDynamicClassOptions([
         {
-          group: `1st Year (Sem 1 & 2) - ${y1}`,
+          group: `1st Year - ${y1}`,
           options: [
             {
-              value: `${deptCodeTarget}1${l1}`,
-              label: `${deptCodeTarget}1${l1} (Sem 1 - ${y1})`,
-            },
-            {
-              value: `${deptCodeTarget}2${l1}`,
-              label: `${deptCodeTarget}2${l1} (Sem 2 - ${y1})`,
+              value: `1Y${deptCodeTarget}${l1}`,
+              label: `1st Year (${deptCodeTarget}) - ${y1}`,
             },
           ],
         },
         {
-          group: `2nd Year (Sem 3 & 4) - ${y2}`,
+          group: `2nd Year - ${y2}`,
           options: [
             {
-              value: `${deptCodeTarget}3${l2}`,
-              label: `${deptCodeTarget}3${l2} (Sem 3 - ${y2})`,
-            },
-            {
-              value: `${deptCodeTarget}4${l2}`,
-              label: `${deptCodeTarget}4${l2} (Sem 4 - ${y2})`,
+              value: `2Y${deptCodeTarget}${l2}`,
+              label: `2nd Year (${deptCodeTarget}) - ${y2}`,
             },
           ],
         },
         {
-          group: `3rd Year (Sem 5 & 6) - ${y3}`,
+          group: `3rd Year - ${y3}`,
           options: [
             {
-              value: `${deptCodeTarget}5${l3}`,
-              label: `${deptCodeTarget}5${l3} (Sem 5 - ${y3})`,
-            },
-            {
-              value: `${deptCodeTarget}6${l3}`,
-              label: `${deptCodeTarget}6${l3} (Sem 6 - ${y3})`,
+              value: `3Y${deptCodeTarget}${l3}`,
+              label: `3rd Year (${deptCodeTarget}) - ${y3}`,
             },
           ],
         },
@@ -490,48 +485,97 @@ export default function HodDashboard({ user }) {
         (d) => d.name === (allotForm.staffDept || user.dept),
       )?.code || "XX";
 
+    const semesterGroups = [
+      { group: `Semesters 1 & 2 - ${y1}`, schemeLetter: l1, semesters: [1, 2] },
+      { group: `Semesters 3 & 4 - ${y2}`, schemeLetter: l2, semesters: [3, 4] },
+      { group: `Semesters 5 & 6 - ${y3}`, schemeLetter: l3, semesters: [5, 6] },
+    ];
+
+    return semesterGroups.map((semGroup) => ({
+      group: semGroup.group,
+      options: semGroup.semesters.map((semNo) => {
+        const semesterCode = `${deptCodeTarget}${semNo}${semGroup.schemeLetter}`;
+        return {
+          value: semesterCode,
+          label: `Semester ${semNo} (${semesterCode})`,
+        };
+      }),
+    }));
+  }, [allotForm.staffDept, user.dept, allDepartmentsData, schemeMappings]);
+
+  const extractSemesterNumber = (classCode) => {
+    const match = String(classCode || "")
+      .trim()
+      .match(/([1-6])/);
+    return match ? match[1] : "";
+  };
+
+  const semesterOptionMeta = React.useMemo(() => {
+    const deptCode =
+      allDepartmentsData.find((d) => d.name === user.dept)?.code || "XX";
+    const extractL = (s) =>
+      s ? String(s).trim().charAt(0).toUpperCase() : "K";
+    const l1 = extractL(schemeMappings.year1);
+    const l2 = extractL(schemeMappings.year2);
+    const l3 = extractL(schemeMappings.year3);
+
+    const semCodeByNumber = {
+      1: `${deptCode}1${l1}`,
+      2: `${deptCode}2${l1}`,
+      3: `${deptCode}3${l2}`,
+      4: `${deptCode}4${l2}`,
+      5: `${deptCode}5${l3}`,
+      6: `${deptCode}6${l3}`,
+    };
+
+    return [1, 2, 3, 4, 5, 6].map((semNo) => ({
+      value: String(semNo),
+      code: semCodeByNumber[semNo],
+      schemeLabel: semNo <= 2 ? l1 : semNo <= 4 ? l2 : l3,
+    }));
+  }, [allDepartmentsData, user.dept, schemeMappings]);
+
+  const semesterSelectOptions = React.useMemo(
+    () =>
+      semesterOptionMeta.map((sem) => ({
+        value: sem.value,
+        label: `Semester ${sem.value} (${sem.code})`,
+      })),
+    [semesterOptionMeta],
+  );
+
+  const groupedSemesterSelectOptions = React.useMemo(() => {
+    const [s1, s2, s3, s4, s5, s6] = semesterOptionMeta;
     return [
       {
-        group: `1st Year (Sem 1 & 2) - ${y1}`,
-        options: [
-          {
-            value: `${deptCodeTarget}1${l1}`,
-            label: `${deptCodeTarget}1${l1} (Sem 1 - ${y1})`,
-          },
-          {
-            value: `${deptCodeTarget}2${l1}`,
-            label: `${deptCodeTarget}2${l1} (Sem 2 - ${y1})`,
-          },
-        ],
+        group: `Semesters 1 & 2 - ${s1?.schemeLabel || "K"}-Scheme`,
+        options: [s1, s2]
+          .filter(Boolean)
+          .map((s) => ({
+            value: s.value,
+            label: `Semester ${s.value} (${s.code})`,
+          })),
       },
       {
-        group: `2nd Year (Sem 3 & 4) - ${y2}`,
-        options: [
-          {
-            value: `${deptCodeTarget}3${l2}`,
-            label: `${deptCodeTarget}3${l2} (Sem 3 - ${y2})`,
-          },
-          {
-            value: `${deptCodeTarget}4${l2}`,
-            label: `${deptCodeTarget}4${l2} (Sem 4 - ${y2})`,
-          },
-        ],
+        group: `Semesters 3 & 4 - ${s3?.schemeLabel || "K"}-Scheme`,
+        options: [s3, s4]
+          .filter(Boolean)
+          .map((s) => ({
+            value: s.value,
+            label: `Semester ${s.value} (${s.code})`,
+          })),
       },
       {
-        group: `3rd Year (Sem 5 & 6) - ${y3}`,
-        options: [
-          {
-            value: `${deptCodeTarget}5${l3}`,
-            label: `${deptCodeTarget}5${l3} (Sem 5 - ${y3})`,
-          },
-          {
-            value: `${deptCodeTarget}6${l3}`,
-            label: `${deptCodeTarget}6${l3} (Sem 6 - ${y3})`,
-          },
-        ],
+        group: `Semesters 5 & 6 - ${s5?.schemeLabel || "K"}-Scheme`,
+        options: [s5, s6]
+          .filter(Boolean)
+          .map((s) => ({
+            value: s.value,
+            label: `Semester ${s.value} (${s.code})`,
+          })),
       },
     ];
-  }, [allotForm.staffDept, user.dept, allDepartmentsData, schemeMappings]);
+  }, [semesterOptionMeta]);
 
   const handleAllotment = async (e) => {
     e.preventDefault();
@@ -541,6 +585,17 @@ export default function HodDashboard({ user }) {
           s.name === allotForm.subject &&
           s.department === (allotForm.staffDept || user.dept),
       );
+      const selectedClassSemester = extractSemesterNumber(allotForm.tClass);
+      if (
+        selectedClassSemester &&
+        selectedSubjectData?.semester &&
+        selectedSubjectData.semester !== selectedClassSemester
+      ) {
+        warning(
+          `Selected subject is for Semester ${selectedSubjectData.semester}. Please select a Semester ${selectedSubjectData.semester} class.`,
+        );
+        return;
+      }
       const isElective = selectedSubjectData?.isElective || false;
       await addDoc(collection(db, "Allocations"), {
         staff: allotForm.staff,
@@ -549,6 +604,7 @@ export default function HodDashboard({ user }) {
         targetClass: allotForm.tClass,
         division: allotForm.division,
         department: allotForm.staffDept || user.dept,
+        semester: selectedSubjectData?.semester || "",
         isElective: isElective,
         createdAt: new Date(),
       });
@@ -735,6 +791,20 @@ export default function HodDashboard({ user }) {
       return;
     }
 
+    // Restrict promotion to strictly consecutive years
+    const yearMatchSource = promoteSource.match(/\d/);
+    const sourceYear = yearMatchSource ? parseInt(yearMatchSource[0]) : null;
+
+    const yearMatchTarget = promoteTarget.match(/\d/);
+    const targetYearNum = yearMatchTarget ? parseInt(yearMatchTarget[0]) : null;
+
+    if (sourceYear !== null && targetYearNum !== null) {
+      if (targetYearNum !== sourceYear + 1) {
+        warning(`Invalid promotion rule: You must promote students exactly one year forward. Jumping from Year ${sourceYear} to Year ${targetYearNum} is not allowed!`);
+        return;
+      }
+    }
+
     const studentsToPromote = students.filter(
       (s) => s.targetClass === promoteSource,
     );
@@ -743,22 +813,47 @@ export default function HodDashboard({ user }) {
       return;
     }
 
-    const confirmMsg = `Are you sure you want to promote ${studentsToPromote.length} students from ${promoteSource} to ${promoteTarget}? \n\nThis will instantly update their class in all directories and reports.`;
-    if (!window.confirm(confirmMsg)) return;
+    setPromoteCandidates(studentsToPromote);
+    setExcludedFromPromotion(new Set());
+    setShowPromoteModal(true);
+  };
+
+  const executeBulkPromote = async () => {
+    const finalCandidates = promoteCandidates.filter((std) => !excludedFromPromotion.has(std.id));
+    
+    if (finalCandidates.length === 0) {
+      warning("No students selected for promotion.");
+      return;
+    }
 
     setIsSubmitting(true);
+    setShowPromoteModal(false);
     try {
       const batch = writeBatch(db);
-      studentsToPromote.forEach((std) => {
+      finalCandidates.forEach((std) => {
         const docRef = doc(db, "Students", std.id);
+        const yearMatch = promoteTarget.match(/\d/);
+        const targetYearNum = yearMatch ? yearMatch[0] : null;
+
+        let newRollNo = std.rollNo;
+        if (newRollNo) {
+          const rollStr = String(newRollNo);
+          if (targetYearNum === "2" && rollStr.startsWith("1")) {
+            newRollNo = "2" + rollStr.substring(1);
+          } else if (targetYearNum === "3" && rollStr.startsWith("2")) {
+            newRollNo = "3" + rollStr.substring(1);
+          }
+        }
+
         batch.update(docRef, {
           targetClass: promoteTarget,
+          rollNo: newRollNo,
           status: "pending", // Reset status for the new semester
         });
       });
       await batch.commit();
       success(
-        `Successfully promoted ${studentsToPromote.length} students to ${promoteTarget}.`,
+        `Successfully promoted ${finalCandidates.length} students to ${promoteTarget}.`,
       );
       setPromoteSource("");
       setPromoteTarget("");
@@ -771,20 +866,22 @@ export default function HodDashboard({ user }) {
   };
 
   const handleBulkDeleteStudents = async () => {
-    if (!deleteClassTarget) {
-      warning("Please select a class to delete.");
+    const thirdYearOption = dynamicClassOptions.find((g) => g.group.includes("3rd Year"))?.options[0];
+    const target = thirdYearOption?.value;
+    if (!target) {
+      warning("Could not identify 3rd year class.");
       return;
     }
 
     const studentsToDelete = students.filter(
-      (s) => s.targetClass === deleteClassTarget,
+      (s) => s.targetClass === target,
     );
     if (studentsToDelete.length === 0) {
-      warning(`No students found in ${deleteClassTarget}.`);
+      warning(`No students found in ${target} to clear.`);
       return;
     }
 
-    const confirmMsg = `⚠ DANGER: Are you sure you want to PERMANENTLY DELETE all ${studentsToDelete.length} students in ${deleteClassTarget}? \n\nThis cannot be undone.`;
+    const confirmMsg = `⚠ DANGER: Are you sure you want to PERMANENTLY DELETE all ${studentsToDelete.length} students in the 3rd Year Batch (${target})? \n\nThis cannot be undone.`;
     if (!window.confirm(confirmMsg)) return;
 
     setIsSubmitting(true);
@@ -795,13 +892,115 @@ export default function HodDashboard({ user }) {
       });
       await batch.commit();
       success(
-        `Deleted ${studentsToDelete.length} students from ${deleteClassTarget}.`,
+        `Deleted ${studentsToDelete.length} graduated students from ${target}.`,
       );
       setDeleteClassTarget("");
       fetchData();
     } catch (err) {
       console.error(err);
       notifyError("Deletion failed.");
+    }
+    setIsSubmitting(false);
+  };
+
+  const getYearFromClassCode = (classCode) => {
+    const normalized = String(classCode || "").trim().toUpperCase();
+    if (!normalized) return null;
+
+    const legacyPattern = normalized.match(/^([1-3])Y/);
+    if (legacyPattern) return parseInt(legacyPattern[1], 10);
+
+    const semPattern = normalized.match(/([1-6])/);
+    if (!semPattern) return null;
+    const semNo = parseInt(semPattern[1], 10);
+    if (semNo <= 2) return 1;
+    if (semNo <= 4) return 2;
+    return 3;
+  };
+
+  const getSilentSemesterShiftTarget = (classCode) => {
+    const normalized = String(classCode || "").trim().toUpperCase();
+    if (!normalized) return null;
+
+    // New format: CM1K, CM3K, ...
+    const semPattern = normalized.match(/^([A-Z]+)([1-6])([A-Z])$/);
+    if (semPattern) {
+      const [, deptCode, semNoRaw, schemeLetter] = semPattern;
+      const semNo = parseInt(semNoRaw, 10);
+      if (semNo % 2 === 1 && semNo < 6) {
+        return `${deptCode}${semNo + 1}${schemeLetter}`;
+      }
+      return null;
+    }
+
+    // Legacy format: 1YCMK, 2YCMK, 3YCMK
+    const legacyPattern = normalized.match(/^([1-3])Y([A-Z]+)([A-Z])$/);
+    if (legacyPattern) {
+      const [, yearNoRaw, deptCode, schemeLetter] = legacyPattern;
+      const yearNo = parseInt(yearNoRaw, 10);
+      return `${deptCode}${yearNo * 2}${schemeLetter}`;
+    }
+
+    return null;
+  };
+
+  const resetYearOptions = React.useMemo(
+    () =>
+      dynamicClassOptions.map((g) => ({
+        value: String(g.options?.[0]?.value || ""),
+        label: g.group || "",
+      })),
+    [dynamicClassOptions],
+  );
+
+  const handleBulkResetStatus = async () => {
+    if (!resetClassTarget) {
+      warning("Please select a year.");
+      return;
+    }
+    const selectedYear = getYearFromClassCode(resetClassTarget);
+    if (!selectedYear) {
+      warning("Could not identify selected year.");
+      return;
+    }
+
+    const studentsToReset = students.filter(
+      (s) => getYearFromClassCode(s.targetClass) === selectedYear,
+    );
+    if (studentsToReset.length === 0) {
+      warning("No students found in selected year.");
+      return;
+    }
+    const studentsToShift = studentsToReset.filter((s) =>
+      Boolean(getSilentSemesterShiftTarget(s.targetClass)),
+    );
+    if (studentsToShift.length === 0) {
+      warning("No students are eligible for semester shift in selected year.");
+      return;
+    }
+
+    const confirmMsg = `Reset feedback status and shift semester for ${studentsToShift.length} students in selected year?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      studentsToShift.forEach((std) => {
+        const shiftedClass = getSilentSemesterShiftTarget(std.targetClass);
+        batch.update(doc(db, "Students", std.id), {
+          targetClass: shiftedClass,
+          status: "pending",
+        });
+      });
+      await batch.commit();
+      success(
+        `Shifted and reset ${studentsToShift.length} students.`,
+      );
+      setResetClassTarget("");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      notifyError("Status reset failed.");
     }
     setIsSubmitting(false);
   };
@@ -831,6 +1030,7 @@ export default function HodDashboard({ user }) {
       await updateDoc(doc(db, "Subjects", editingSubjectId), {
         name: editSubjectForm.name.trim(),
         code: editSubjectForm.code.toUpperCase().trim(),
+        semester: editSubjectForm.semester,
         isElective: editSubjectForm.isElective,
       });
       setEditingSubjectId(null);
@@ -841,16 +1041,22 @@ export default function HodDashboard({ user }) {
     }
   };
 
-  const filteredStudents = students.filter((s) => {
-    const matchRoll = searchRollNo
-      ? s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
-        s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
-        s.name?.toLowerCase().includes(searchRollNo.toLowerCase())
-      : true;
-    const matchClass = filterClass ? s.targetClass === filterClass : true;
-    const matchDiv = filterDivision ? s.division === filterDivision : true;
-    return matchRoll && matchClass && matchDiv;
-  });
+  const isFilterActive = searchRollNo || filterClass || filterDivision;
+  const filteredSubjectList = subjectSemesterFilter
+    ? subjectList.filter((s) => String(s.semester || "") === subjectSemesterFilter)
+    : subjectList;
+  const filteredStudents = isFilterActive
+    ? students.filter((s) => {
+        const matchRoll = searchRollNo
+          ? s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+            s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+            s.name?.toLowerCase().includes(searchRollNo.toLowerCase())
+          : true;
+        const matchClass = filterClass ? s.targetClass === filterClass : true;
+        const matchDiv = filterDivision ? s.division === filterDivision : true;
+        return matchRoll && matchClass && matchDiv;
+      })
+    : [];
 
   return (
     <>
@@ -937,18 +1143,18 @@ export default function HodDashboard({ user }) {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-white/60 p-5 ring-1 ring-slate-200 shadow-sm backdrop-blur-md relative z-10">
-                  <div className="flex min-w-[150px] flex-1 flex-col gap-1.5 relative z-50">
+                  <div className="flex w-full md:min-w-[150px] flex-1 flex-col gap-1.5 relative z-50">
                     <span className="text-xs font-semibold text-slate-700 ml-1">
-                      Select Class
+                      Select Year
                     </span>
                     <CustomSelect
                       value={excelClass}
                       onChange={(val) => setExcelClass(val)}
                       options={dynamicClassOptions}
-                      placeholder="Select Class"
+                      placeholder="Select Year"
                     />
                   </div>
-                  <div className="flex w-full min-w-[120px] max-w-[150px] flex-col gap-1.5 relative z-40">
+                  <div className="flex w-full md:min-w-[120px] md:max-w-[150px] flex-col gap-1.5 relative z-40">
                     <span className="text-xs font-semibold text-slate-700 ml-1">
                       Division
                     </span>
@@ -962,7 +1168,7 @@ export default function HodDashboard({ user }) {
                       placeholder="Division"
                     />
                   </div>
-                  <label className="flex flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
+                  <label className="flex w-full md:w-auto md:flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all md:min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
                     {isSubmitting ? "Uploading…" : "Choose Excel file"}
                     <input
                       type="file"
@@ -1064,13 +1270,13 @@ export default function HodDashboard({ user }) {
                 </div>
                 <div className="md:col-span-4 relative z-[60]">
                   <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                    Class
+                    Year
                   </label>
                   <CustomSelect
                     value={stdForm.tClass}
                     onChange={(val) => setStdForm({ ...stdForm, tClass: val })}
                     options={dynamicClassOptions}
-                    placeholder="Select Class"
+                    placeholder="Select Year"
                   />
                 </div>
                 <div className="md:col-span-2 relative z-50">
@@ -1091,7 +1297,7 @@ export default function HodDashboard({ user }) {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full xl:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="w-full xl:w-auto bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? "Saving…" : "Save Student"}
                   </button>
@@ -1114,8 +1320,8 @@ export default function HodDashboard({ user }) {
                     <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
                       Student Lifecycle Tools
                     </h2>
-                    <p className="text-slate-500 text-sm mt-1 font-medium italic">
-                      "Each sem feedback must be isolated" — HOD
+                    <p className="text-slate-500 text-sm mt-1 font-medium">
+                      Manage student promotions, semester feedback resets, and graduations.
                     </p>
                   </div>
                 </div>
@@ -1129,18 +1335,18 @@ export default function HodDashboard({ user }) {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <span className="text-[10px] font-bold text-slate-500 ml-1">
-                          SOURCE SEMESTER
+                          SOURCE YEAR
                         </span>
                         <CustomSelect
                           value={promoteSource}
                           onChange={(val) => setPromoteSource(val)}
                           options={dynamicClassOptions}
-                          placeholder="Current Sem"
+                          placeholder="Current Year"
                         />
                       </div>
                       <div className="space-y-1.5">
                         <span className="text-[10px] font-bold text-slate-500 ml-1">
-                          TARGET SEMESTER
+                          TARGET YEAR
                         </span>
                         <CustomSelect
                           value={promoteTarget}
@@ -1155,36 +1361,65 @@ export default function HodDashboard({ user }) {
                       disabled={
                         isSubmitting || !promoteSource || !promoteTarget
                       }
-                      className="w-full h-11 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-orange-200 active:scale-95"
+                      className="group relative w-full flex h-12 items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_-6px_rgba(234,88,12,0.5)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_12px_25px_-6px_rgba(234,88,12,0.6)] active:scale-95 disabled:pointer-events-none disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
                     >
-                      {isSubmitting
-                        ? "Processing..."
-                        : "Promote Batch to Next Semester"}
+                      <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></div>
+                      <span className="relative z-10 flex items-center gap-2 tracking-wide uppercase">
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw size={18} className="animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            Promote Batch to Next Year
+                            <ArrowUpCircle size={18} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                          </>
+                        )}
+                      </span>
                     </button>
                   </div>
 
-                  {/* Batch Deletion */}
-                  <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4">
-                    <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
-                      <Trash2 size={14} /> Graduation Cleanup
+                  {/* Semester Isolation / Status Reset */}
+                  <div className="p-5 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-4">
+                    <h4 className="text-xs font-bold text-blue-700 uppercase tracking-widest flex items-center gap-2">
+                      <RefreshCw size={14} /> New Semester Feedback Reset
                     </h4>
+                    <p className="text-xs text-blue-800/80 mb-2 font-medium">Select a year and reset status for the next semester feedback cycle.</p>
                     <div className="flex gap-4">
                       <div className="flex-1">
                         <CustomSelect
-                          value={deleteClassTarget}
-                          onChange={(val) => setDeleteClassTarget(val)}
-                          options={dynamicClassOptions}
-                          placeholder="Select Graduated Batch"
+                          value={resetClassTarget}
+                          onChange={(val) => setResetClassTarget(val)}
+                          options={resetYearOptions}
+                          placeholder="Select Target Year"
                         />
                       </div>
                       <button
-                        onClick={handleBulkDeleteStudents}
-                        disabled={isSubmitting || !deleteClassTarget}
-                        className="px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
+                        onClick={handleBulkResetStatus}
+                        disabled={isSubmitting || !resetClassTarget}
+                        className="px-4 sm:px-6 h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-200 active:scale-95"
                       >
-                        Clear Batch
+                        Reset Feedback Status
                       </button>
                     </div>
+                  </div>
+
+                  {/* Batch Deletion */}
+                  <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
+                        <Trash2 size={14} /> Graduation Cleanup
+                      </h4>
+                      <p className="text-[10px] text-red-800/70 font-semibold mt-1">Permanently remove the outgoing 3rd Year graduating batch.</p>
+                    </div>
+                    <button
+                      onClick={handleBulkDeleteStudents}
+                      disabled={isSubmitting}
+                      className="px-4 sm:px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
+                    >
+                      Clear 3rd Year Batch
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1217,12 +1452,11 @@ export default function HodDashboard({ user }) {
                     />
                   </div>
                   <div className="flex gap-3 w-full md:w-auto relative z-[60]">
-                    <div className="min-w-[200px] flex-1 md:flex-none">
+                    <div className="w-full md:min-w-[200px] flex-1 md:flex-none">
                       <CustomSelect
                         value={filterClass}
                         onChange={(val) => setFilterClass(val)}
                         options={[
-                          { value: "", label: "All Classes" },
                           ...dynamicClassOptions.flatMap((g) =>
                             g.options.map((opt) => ({
                               value: opt.value,
@@ -1230,19 +1464,18 @@ export default function HodDashboard({ user }) {
                             })),
                           ),
                         ]}
-                        placeholder="All Classes"
+                        placeholder="Select Year"
                       />
                     </div>
-                    <div className="min-w-[140px] flex-1 md:flex-none">
+                    <div className="w-full md:min-w-[140px] flex-1 md:flex-none">
                       <CustomSelect
                         value={filterDivision}
                         onChange={(val) => setFilterDivision(val)}
                         options={[
-                          { value: "", label: "All Divisions" },
                           { value: "A", label: "Div A" },
                           { value: "B", label: "Div B" },
                         ]}
-                        placeholder="All Divisions"
+                        placeholder="Select Division"
                       />
                     </div>
                   </div>
@@ -1255,10 +1488,10 @@ export default function HodDashboard({ user }) {
                       <Users size={32} strokeWidth={1.5} />
                     </div>
                     <p className="text-sm font-bold text-slate-600">
-                      No students found
+                      {!searchRollNo && !filterClass && !filterDivision ? "Please apply a filter to view directory data" : "No students found"}
                     </p>
                     <p className="mt-1.5 max-w-[200px] text-[11px] leading-relaxed text-slate-400">
-                      Import an Excel file or add single records below.
+                      {!searchRollNo && !filterClass && !filterDivision ? "Select a year, division, or search by name to display records." : "Try adjusting your search or imported records."}
                     </p>
                   </div>
                 ) : (
@@ -1490,14 +1723,24 @@ export default function HodDashboard({ user }) {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
+                  if (!subForm.semester) {
+                    warning("Please select a semester for this subject.");
+                    return;
+                  }
                   try {
                     await addDoc(collection(db, "Subjects"), {
                       name: subForm.name,
                       code: subForm.code.toUpperCase(),
+                      semester: subForm.semester,
                       department: user.dept,
                       isElective: subForm.isElective,
                     });
-                    setSubForm({ name: "", code: "", isElective: false });
+                    setSubForm({
+                      name: "",
+                      code: "",
+                      semester: "",
+                      isElective: false,
+                    });
                     fetchData();
                     success("Subject saved.");
                   } catch {
@@ -1518,6 +1761,17 @@ export default function HodDashboard({ user }) {
                       setSubForm({ ...subForm, name: e.target.value })
                     }
                     required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest ml-1 mb-1.5 block">
+                    Semester
+                  </label>
+                  <CustomSelect
+                    value={subForm.semester}
+                    onChange={(val) => setSubForm({ ...subForm, semester: val })}
+                    options={groupedSemesterSelectOptions}
+                    placeholder="Select Semester"
                   />
                 </div>
                 <div>
@@ -1557,17 +1811,30 @@ export default function HodDashboard({ user }) {
                 </button>
               </form>
             </Card>
-            <Card className="flex flex-col border-emerald-100 p-0 overflow-hidden shadow-sm max-h-[600px]">
+            <Card className="flex flex-col border-emerald-100 p-0 overflow-hidden shadow-sm md:max-h-[600px]">
               <div className="px-6 py-5 border-b border-emerald-50 bg-emerald-50/50 flex justify-between items-center">
                 <h3 className="font-extrabold text-emerald-950 uppercase text-sm flex items-center gap-2">
                   Subject Inventory
                 </h3>
-                <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black">
-                  {subjectList.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <div className="w-full sm:w-auto sm:min-w-[140px]">
+                    <CustomSelect
+                      value={subjectSemesterFilter}
+                      onChange={(val) => setSubjectSemesterFilter(val)}
+                      options={[
+                        { value: "", label: "All Semesters" },
+                        ...semesterSelectOptions,
+                      ]}
+                      placeholder="All Semesters"
+                    />
+                  </div>
+                  <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-black">
+                    {filteredSubjectList.length}
+                  </span>
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30 max-h-[400px]">
-                {subjectList.length === 0 ? (
+                {filteredSubjectList.length === 0 ? (
                   <div className="text-center py-10 opacity-50">
                     <BookOpen
                       className="mx-auto mb-3 text-slate-400"
@@ -1576,7 +1843,7 @@ export default function HodDashboard({ user }) {
                     <p className="font-bold text-sm">No Subjects Added</p>
                   </div>
                 ) : (
-                  subjectList.map((s) => {
+                  filteredSubjectList.map((s) => {
                     if (editingSubjectId === s.id) {
                       return (
                         <div
@@ -1603,6 +1870,22 @@ export default function HodDashboard({ user }) {
                                   }
                                   className="input-app py-2 text-sm font-semibold w-full"
                                   placeholder="Subject Name"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                                  Semester
+                                </label>
+                                <CustomSelect
+                                  value={editSubjectForm.semester || ""}
+                                  onChange={(val) =>
+                                    setEditSubjectForm({
+                                      ...editSubjectForm,
+                                      semester: val,
+                                    })
+                                  }
+                                  options={groupedSemesterSelectOptions}
+                                  placeholder="Select Semester"
                                 />
                               </div>
                               <div>
@@ -1673,6 +1956,9 @@ export default function HodDashboard({ user }) {
                           <span className="text-slate-400 font-bold text-[10px] tracking-widest uppercase mt-0.5">
                             Code: {s.code}
                           </span>
+                          <span className="text-emerald-600 font-bold text-[10px] tracking-widest uppercase mt-0.5">
+                            Semester: {s.semester || "-"}
+                          </span>
                         </div>
                         <div className="shrink-0 flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end mt-3 sm:mt-0 pt-3 sm:pt-0 border-t border-slate-100 sm:border-0 border-dashed">
                           {s.isElective && (
@@ -1689,6 +1975,7 @@ export default function HodDashboard({ user }) {
                                 setEditSubjectForm({
                                   name: s.name || "",
                                   code: s.code || "",
+                                  semester: String(s.semester || ""),
                                   isElective: s.isElective || false,
                                 });
                               }}
@@ -1793,11 +2080,15 @@ export default function HodDashboard({ user }) {
                           (s) =>
                             s.department ===
                               (allotForm.staffDept || user.dept) &&
-                            !s.isElective,
+                            !s.isElective &&
+                            (!allotForm.tClass ||
+                              !s.semester ||
+                              s.semester ===
+                                extractSemesterNumber(allotForm.tClass)),
                         )
                         .map((s) => ({
                           value: s.name,
-                          label: `${s.name} (${s.code})`,
+                          label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
                         })),
                     },
                     {
@@ -1807,18 +2098,22 @@ export default function HodDashboard({ user }) {
                           (s) =>
                             s.department ===
                               (allotForm.staffDept || user.dept) &&
-                            s.isElective,
+                            s.isElective &&
+                            (!allotForm.tClass ||
+                              !s.semester ||
+                              s.semester ===
+                                extractSemesterNumber(allotForm.tClass)),
                         )
                         .map((s) => ({
                           value: s.name,
-                          label: `${s.name} (${s.code})`,
+                          label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
                         })),
                     },
                   ]}
                   placeholder="Choose Subject"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-5 relative z-50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 relative z-50">
                 <div className="space-y-1.5 relative z-40">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
                     Target Class
@@ -1826,7 +2121,7 @@ export default function HodDashboard({ user }) {
                   <CustomSelect
                     value={allotForm.tClass}
                     onChange={(val) =>
-                      setAllotForm({ ...allotForm, tClass: val })
+                      setAllotForm({ ...allotForm, tClass: val, subject: "" })
                     }
                     options={dynamicClassOptionsForAllotment}
                     placeholder="Target Class"
@@ -1859,7 +2154,7 @@ export default function HodDashboard({ user }) {
 
         {/* NEW: MONITOR TAB */}
         {activeTab === "monitor" && (
-          <Card className="p-0 border-blue-100 flex flex-col overflow-hidden shadow-md animate-in slide-in-from-bottom-4 duration-500 max-h-[85vh]">
+          <Card className="p-0 border-blue-100 flex flex-col overflow-hidden shadow-md animate-in slide-in-from-bottom-4 duration-500 md:max-h-[85vh]">
             <div className="p-6 border-b border-blue-50 bg-blue-50/30 flex justify-between items-center gap-4 flex-wrap relative z-[80]">
               <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800 uppercase tracking-tight">
                 <div className="p-2 bg-blue-100 rounded-xl">
@@ -2011,7 +2306,7 @@ export default function HodDashboard({ user }) {
               </div>
               <div className="p-6 bg-white flex flex-wrap gap-5 items-end justify-between">
                 <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
-                  <div className="flex-1 min-w-[120px]">
+                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                       Academic Year
                     </label>
@@ -2023,7 +2318,7 @@ export default function HodDashboard({ user }) {
                       placeholder="e.g. 2024-25"
                     />
                   </div>
-                  <div className="flex-1 min-w-[120px]">
+                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                       Semester
                     </label>
@@ -2040,7 +2335,7 @@ export default function HodDashboard({ user }) {
                       placeholder="e.g. VI"
                     />
                   </div>
-                  <div className="flex-[1] min-w-[180px] relative z-[60]">
+                  <div className="flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                       Department
                     </label>
@@ -2061,7 +2356,7 @@ export default function HodDashboard({ user }) {
                       placeholder="Select Department"
                     />
                   </div>
-                  <div className="flex-[2] min-w-[200px] relative z-[60]">
+                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                       Faculty
                     </label>
@@ -2090,7 +2385,7 @@ export default function HodDashboard({ user }) {
                     />
                   </div>
                   {reportStaff && (
-                    <div className="flex-[2] min-w-[200px] animate-in fade-in duration-300 relative z-50">
+                    <div className="flex-[2] min-w-0 sm:min-w-[200px] animate-in fade-in duration-300 relative z-50">
                       <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                         Subject
                       </label>
@@ -2831,6 +3126,161 @@ export default function HodDashboard({ user }) {
             </div>
           </Card>
         )}
+
+        {/* PROMOTE STUDENTS MODAL */}
+        {showPromoteModal &&
+          createPortal(
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 99999,
+                backgroundColor: "rgba(15,23,42,0.75)",
+                backdropFilter: "blur(5px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "white",
+                  borderRadius: "12px",
+                  padding: "24px",
+                  width: "90%",
+                  maxWidth: "600px",
+                  /* Custom maxHeight & flex column structure for scrolling list */
+                  maxHeight: "85vh",
+                  color: "#0f172a",
+                  zIndex: 999999,
+                  position: "relative",
+                  boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderBottom: "2px solid #f1f5f9",
+                    paddingBottom: "16px",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: "1.25rem",
+                      fontWeight: "800",
+                      margin: 0,
+                      color: "#1e293b",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    Confirm Bulk Promotion
+                  </h3>
+                  <button
+                    onClick={() => setShowPromoteModal(false)}
+                    style={{
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Close ✕
+                  </button>
+                </div>
+                <p style={{ marginBottom: "16px", fontWeight: "500", color: "#475569" }}>
+                  Select students to EXCLUDE from promotion (e.g., failed or dropped out). Unchecked students will NOT be promoted to {promoteTarget}.
+                </p>
+                <div style={{ overflowY: "auto", flex: 1, marginBottom: "16px", paddingRight: "8px" }}>
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                    }}
+                  >
+                    {promoteCandidates.map((std) => {
+                      const isExcluded = excludedFromPromotion.has(std.id);
+                      return (
+                        <li
+                          key={std.id}
+                          style={{
+                            padding: "12px",
+                            border: `1px solid ${isExcluded ? "#f87171" : "#e2e8f0"}`,
+                            borderRadius: "8px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: isExcluded ? "#fef2f2" : "#f8fafc",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onClick={() => {
+                            const newSet = new Set(excludedFromPromotion);
+                            if (isExcluded) newSet.delete(std.id);
+                            else newSet.add(std.id);
+                            setExcludedFromPromotion(newSet);
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <input
+                              type="checkbox"
+                              checked={!isExcluded}
+                              onChange={() => {}} // Handled by inline li onClick
+                              style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <span style={{ fontWeight: "bold", fontSize: "14px", color: isExcluded ? "#991b1b" : "#1e293b" }}>
+                                {std.name}
+                              </span>
+                              <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase" }}>
+                                {std.rollNo} • Div {std.division || "A"}
+                              </span>
+                            </div>
+                          </div>
+                          {isExcluded && (
+                            <span style={{ fontSize: "10px", fontWeight: "900", color: "#ef4444", textTransform: "uppercase", background: "#fee2e2", padding: "4px 8px", borderRadius: "6px" }}>
+                              Excluded
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "2px solid #f1f5f9", paddingTop: "16px" }}>
+                  <button
+                    onClick={() => setShowPromoteModal(false)}
+                    style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "white", fontWeight: "bold", cursor: "pointer", color: "#475569" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={executeBulkPromote}
+                    style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#3b82f6", color: "white", fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}
+                  >
+                    Promote {promoteCandidates.length - excludedFromPromotion.size} Students
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )}
 
         {/* REMAINING STUDENTS MODAL */}
         {showRemainingModal &&

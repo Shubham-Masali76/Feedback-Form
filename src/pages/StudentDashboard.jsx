@@ -65,20 +65,33 @@ export default function StudentDashboard({ user }) {
   };
 
   const getYearLevel = (tClass) => {
-    if (!tClass) return "FY";
-    // Usually code like CM1K, CM3K - first digit after dept code or just look for digits
-    const match = tClass.match(/\d/);
-    if (!match) return "FY";
-    const semDigit = parseInt(match[0]);
-    if (semDigit <= 2) return "FY";
-    if (semDigit <= 4) return "SY";
-    return "TY";
+    const yearNumber = getYearNumberFromClassCode(tClass);
+    if (yearNumber === 2) return "SY";
+    if (yearNumber === 3) return "TY";
+    return "FY";
   };
 
   const getSemLabel = (tClass) => {
     if (!tClass) return "I";
     const match = tClass.match(/\d/);
     return match ? `Sem ${match[0]}` : "I";
+  };
+
+  const getYearNumberFromClassCode = (classCode) => {
+    const code = String(classCode || "").trim().toUpperCase();
+    if (!code) return 1;
+
+    const yearPattern = code.match(/([1-3])Y/);
+    if (yearPattern) return parseInt(yearPattern[1], 10);
+
+    const semPattern = code.match(/([1-6])/);
+    if (semPattern) {
+      const semester = parseInt(semPattern[1], 10);
+      if (semester <= 2) return 1;
+      if (semester <= 4) return 2;
+      return 3;
+    }
+    return 1;
   };
 
   useEffect(() => {
@@ -121,7 +134,19 @@ export default function StudentDashboard({ user }) {
         querySnapshot.forEach((doc) => {
           allocData.push({ id: doc.id, ...doc.data() });
         });
-        setAllocations(allocData);
+        const currentStudentClass = String(user?.targetClass || "").trim();
+        const studentYear = getYearNumberFromClassCode(currentStudentClass);
+        const filteredAllocations = allocData.filter((alloc) => {
+          const allocClass = alloc.targetClass ?? alloc.tClass ?? "";
+          const normalizedAllocClass = String(allocClass).trim();
+          if (normalizedAllocClass && currentStudentClass) {
+            return normalizedAllocClass === currentStudentClass;
+          }
+          // Fallback for old records that may not have class information
+          const allocYear = getYearNumberFromClassCode(normalizedAllocClass);
+          return allocYear === studentYear;
+        });
+        setAllocations(filteredAllocations);
 
         const exitQ = query(
           collection(db, "CourseExitForms"),
@@ -138,7 +163,7 @@ export default function StudentDashboard({ user }) {
         setExitForms(fetchedExitForms);
 
         // Check if student already submitted institution feedback for this year
-        if (instOpen && acadYear) {
+        if (instOpen && autoYear) {
           const instCheckQ = query(
             collection(db, "InstitutionFeedbackResponses"),
             where("email", "==", user.email),
@@ -165,7 +190,7 @@ export default function StudentDashboard({ user }) {
         staffFeedSnap.forEach((d) => {
           const data = d.data();
           // Find matching allocation ID
-          const match = allocData.find(
+          const match = filteredAllocations.find(
             (a) =>
               a.id === data.allocationId ||
               (a.staff === data.staffName &&
@@ -188,7 +213,7 @@ export default function StudentDashboard({ user }) {
         const prevExitSubmissions = [];
         exitRespTrackerSnap.forEach((d) => {
           const data = d.data();
-          const match = allocData.find(
+          const match = filteredAllocations.find(
             (a) =>
               a.id === data.allocationId ||
               (a.staff === data.staffName &&
@@ -1058,7 +1083,7 @@ export default function StudentDashboard({ user }) {
                         <button
                           type="button"
                           onClick={() => setActiveFormTab("faculty")}
-                          className={`flex-1 py-4 px-6 text-sm font-bold whitespace-nowrap transition-colors ${
+                          className={`flex-1 py-4 px-4 sm:px-6 text-sm font-bold whitespace-nowrap transition-colors ${
                             activeFormTab === "faculty"
                               ? "text-indigo-600 border-b-2 border-indigo-600 bg-white"
                               : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
@@ -1075,7 +1100,7 @@ export default function StudentDashboard({ user }) {
                         <button
                           type="button"
                           onClick={() => setActiveFormTab("exit")}
-                          className={`flex-1 py-4 px-6 text-sm font-bold whitespace-nowrap transition-colors ${
+                          className={`flex-1 py-4 px-4 sm:px-6 text-sm font-bold whitespace-nowrap transition-colors ${
                             activeFormTab === "exit"
                               ? "text-emerald-600 border-b-2 border-emerald-600 bg-white"
                               : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
