@@ -145,7 +145,7 @@ export default function StaffDashboard({ user }) {
     };
 
     fetchStaffData();
-  }, [user.name]);
+  }, [user.name, user.dept]);
 
   // --- REPORT CALCULATION ENGINE ---
   const isExitMode = reportTab === "exit";
@@ -156,9 +156,10 @@ export default function StaffDashboard({ user }) {
       new Set(allocations.map((a) => classKey(a)).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b));
 
-    const deptCode = String(departmentCode || "")
-      .trim()
-      .toUpperCase() || "XX";
+    const deptCode =
+      String(departmentCode || "")
+        .trim()
+        .toUpperCase() || "XX";
     const extractL = (s) =>
       s ? String(s).trim().charAt(0).toUpperCase() : "K";
     const l1 = extractL(schemeMappings?.year1);
@@ -223,10 +224,7 @@ export default function StaffDashboard({ user }) {
           questionAverages[qIndex] += rating;
         }
         // Track rating counts
-        if (
-          scoreCounts[qIndex] &&
-          scoreCounts[qIndex][rating] !== undefined
-        ) {
+        if (scoreCounts[qIndex] && scoreCounts[qIndex][rating] !== undefined) {
           scoreCounts[qIndex][rating]++;
         }
       });
@@ -236,12 +234,12 @@ export default function StaffDashboard({ user }) {
 
     // Calculate Final Averages
     for (let i = 0; i < qCount; i++) {
-      questionAverages[i] = (questionAverages[i] / totalResponses).toFixed(1);
+      questionAverages[i] = Math.round(questionAverages[i] / totalResponses);
     }
     // Max possible score per student is qCount questions * 5 points
     // We want the overall average out of 5
     overallAverage =
-      qCount > 0 ? (totalScoreSum / totalResponses / qCount).toFixed(1) : "0.0";
+      qCount > 0 ? Math.round(totalScoreSum / totalResponses / qCount) : "0";
   }
 
   if (loading)
@@ -599,8 +597,8 @@ export default function StaffDashboard({ user }) {
           user={user}
           exitForms={exitForms}
           setExitForms={setExitForms}
-        schemeMappings={schemeMappings}
-        departmentCode={departmentCode}
+          schemeMappings={schemeMappings}
+          departmentCode={departmentCode}
           notify={{ success, notifyError, warning }}
           subjectClassValue={subjectClassValue}
           classKey={classKey}
@@ -635,9 +633,10 @@ function CourseExitBuilder({
   ).sort((a, b) => a.localeCompare(b));
 
   const allSemesterClassOptions = React.useMemo(() => {
-    const deptCode = String(departmentCode || "")
-      .trim()
-      .toUpperCase() || "XX";
+    const deptCode =
+      String(departmentCode || "")
+        .trim()
+        .toUpperCase() || "XX";
     const extractL = (s) =>
       s ? String(s).trim().charAt(0).toUpperCase() : "K";
     const l1 = extractL(schemeMappings?.year1);
@@ -661,25 +660,22 @@ function CourseExitBuilder({
     ? allocations.filter((a) => classKey(a) === selectedBuilderClass)
     : [];
 
-  useEffect(() => {
-    setSelectedBuilderSubject("");
-  }, [selectedBuilderClass]);
-
   // Load existing form data when subject changes
   useEffect(() => {
-    if (!selectedBuilderSubject) {
-      setQuestions([]);
-      setIsFormOpen(false);
-      return;
-    }
-    const existing = exitForms[selectedBuilderSubject];
-    if (existing && existing.questions) {
-      setQuestions(existing.questions);
-      setIsFormOpen(!!existing.isOpen);
-    } else {
-      setQuestions([]);
-      setIsFormOpen(false);
-    }
+    const existing = selectedBuilderSubject
+      ? exitForms[selectedBuilderSubject]
+      : null;
+
+    // Using a microtask to avoid synchronous setState warning if absolutely needed
+    // or better, handle this state change in the subject selection handler.
+    const timer = setTimeout(() => {
+      const newQuestions =
+        existing && existing.questions ? existing.questions : [];
+      const newIsOpen = !!(existing && existing.isOpen);
+      setQuestions(newQuestions);
+      setIsFormOpen(newIsOpen);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [selectedBuilderSubject, exitForms]);
 
   const handleAddQuestion = () => {
@@ -890,9 +886,12 @@ function CourseExitBuilder({
                     const subjectValue = subjectClassValue(alloc);
                     const isExisting = !!exitForms[subjectValue];
                     const isSelected = selectedBuilderSubject === subjectValue;
+                    const subjectDisplayName =
+                      alloc.subject?.trim() || "Unnamed Subject";
+
                     return (
                       <button
-                        key={subjectValue}
+                        key={`${alloc.id}-${subjectValue}`}
                         type="button"
                         onClick={() => setSelectedBuilderSubject(subjectValue)}
                         className={`w-full rounded-xl border px-3 py-2 text-left text-xs font-bold transition-all ${
@@ -901,8 +900,13 @@ function CourseExitBuilder({
                             : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40"
                         }`}
                       >
-                        {alloc.subject}
+                        {subjectDisplayName}
                         {isExisting ? " (Saved)" : ""}
+                        {!alloc.subject?.trim() && (
+                          <span className="block text-[10px] font-medium text-amber-600 mt-1">
+                            ⚠️ Missing subject name in allotment
+                          </span>
+                        )}
                       </button>
                     );
                   })

@@ -162,6 +162,7 @@ export default function StudentLogin({
       onLoginSuccess({
         id: studentData.id,
         name: studentData.name,
+        email: studentData.email,
         rollNo: studentData.rollNo,
         dept: studentData.department,
         division: studentData.division,

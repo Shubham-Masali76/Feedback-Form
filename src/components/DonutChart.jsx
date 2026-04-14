@@ -41,6 +41,48 @@ const DonutLabel = ({
   );
 };
 
+const CustomTooltip = ({ active, payload, total }) => {
+  if (active && payload && payload.length) {
+    const { name, value } = payload[0].payload;
+    const percent = total > 0 ? (value / total) * 100 : 0;
+    return (
+      <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
+        <p className="font-bold text-sm">{name}</p>
+        <p className="text-xs font-semibold text-blue-300">Count: {value}</p>
+        <p className="text-xs font-semibold text-emerald-300">
+          {percent.toFixed(1)}%
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+const CustomLegend = ({ displayData, colors }) => {
+  const totalValue = displayData.reduce((sum, item) => sum + item.value, 0);
+  return (
+    <ul className="flex flex-wrap justify-center gap-x-5 gap-y-3 mt-2 px-4 pb-2 w-full">
+      {displayData.map((item, index) => {
+        const percent =
+          totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
+        const color = item.color || colors[item.originalIndex % colors.length];
+        return (
+          <li
+            key={`item-${index}`}
+            className="flex items-center text-sm text-slate-700 font-semibold gap-2"
+          >
+            <span
+              className="w-3 h-3 rounded-full shrink-0"
+              style={{ backgroundColor: color }}
+            />
+            <span>{`${item.name}: ${item.value} (${percent}%)`}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
+
 /**
  * Reusable Donut Chart Component
  * @param {Array} data - Array of objects with {name, value}
@@ -70,83 +112,13 @@ export default function DonutChart({
     );
   }
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const { name, value } = payload[0];
-      const total = displayData.reduce((sum, item) => sum + item.value, 0);
-      const percent = total > 0 ? (value / total) * 100 : 0;
-      return (
-        <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
-          <p className="font-bold text-sm">{name}</p>
-          <p className="text-xs font-semibold text-blue-300">Count: {value}</p>
-          <p className="text-xs font-semibold text-emerald-300">
-            {percent.toFixed(1)}%
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+  const total = displayData.reduce((sum, item) => sum + item.value, 0);
 
-  const CustomLabel = ({
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    percent,
-  }) => {
-    if (percent < 0.05) return null; // Don't show labels for very small slices
-
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
-    const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
-
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="#ffffff"
-        stroke="rgba(0,0,0,0.8)"
-        strokeWidth="3"
-        paintOrder="stroke"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-sm font-black"
-        style={{
-          filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
-        }}
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
-  };
-
-  const CustomLegend = () => {
-    const totalValue = displayData.reduce((sum, item) => sum + item.value, 0);
-    return (
-      <ul className="flex flex-wrap justify-center gap-x-5 gap-y-3 mt-2 px-4 pb-2 w-full">
-        {displayData.map((item, index) => {
-          const percent =
-            totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
-          const color =
-            item.color || colors[item.originalIndex % colors.length];
-          return (
-            <li
-              key={`item-${index}`}
-              className="flex items-center text-sm text-slate-700 font-semibold gap-2"
-            >
-              <span
-                className="w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: color }}
-              />
-              <span>{`${item.name}: ${item.value} (${percent}%)`}</span>
-            </li>
-          );
-        })}
-      </ul>
-    );
-  };
+  // Responsive sizing
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const responsiveInner = isMobile ? 40 : 80;
+  const responsiveOuter = isMobile ? 70 : 130;
+  const responsiveHeight = isMobile ? Math.min(height, 250) : height;
 
   return (
     <div className="w-full h-full flex flex-col items-center">
@@ -155,17 +127,17 @@ export default function DonutChart({
           {title}
         </h3>
       )}
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={responsiveHeight}>
         <PieChart>
           <Pie
             data={displayData}
             cx="50%"
             cy="50%"
-            innerRadius={80}
-            outerRadius={130}
+            innerRadius={responsiveInner}
+            outerRadius={responsiveOuter}
             paddingAngle={2}
             dataKey="value"
-            label={CustomLabel}
+            label={DonutLabel}
             labelLine={false}
           >
             {displayData.map((item, idx) => (
@@ -175,7 +147,7 @@ export default function DonutChart({
               />
             ))}
           </Pie>
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip total={total} />} />
 
           {centerText && (
             <text
@@ -190,7 +162,7 @@ export default function DonutChart({
           )}
         </PieChart>
       </ResponsiveContainer>
-      <CustomLegend />
+      <CustomLegend displayData={displayData} colors={colors} />
     </div>
   );
 }

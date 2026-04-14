@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import ReactDOM, { createPortal } from "react-dom";
 import {
   Users,
@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   ChevronDown,
   CheckCircle,
+  AlertCircle,
   UserPlus,
   Library,
   Edit2,
@@ -45,7 +46,10 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import * as XLSX from "xlsx";
-import { FEEDBACK_QUESTIONS } from "../constants/feedbackQuestions";
+import {
+  FEEDBACK_QUESTIONS,
+  INSTITUTION_QUESTIONS,
+} from "../constants/feedbackQuestions";
 import {
   isValidRollNumber,
   normalizeRollDigits,
@@ -63,7 +67,6 @@ export default function HodDashboard({ user }) {
   const [showSubmittedModal, setShowSubmittedModal] = useState(false);
 
   // -- Data States --
-  const [staffList, setStaffList] = useState([]);
   const [subjectList, setSubjectList] = useState([]);
   const [students, setStudents] = useState([]);
   const [feedbacks, setFeedbacks] = useState([]); // NEW: Store Feedbacks
@@ -116,9 +119,9 @@ export default function HodDashboard({ user }) {
   });
 
   // -- Monitor & Report States (NEW) --
-  const [monitorDept, setMonitorDept] = useState("");
+  const [monitorDept, setMonitorDept] = useState(user.dept || "");
   const [monitorStaff, setMonitorStaff] = useState("");
-  const [monitorDivision, setMonitorDivision] = useState("");
+  const [monitorSubject, setMonitorSubject] = useState("");
   const [reportDept, setReportDept] = useState(user.dept || "");
   const [reportStaff, setReportStaff] = useState("");
   const [reportSubject, setReportSubject] = useState("");
@@ -127,9 +130,9 @@ export default function HodDashboard({ user }) {
   const [dynamicClassOptions, setDynamicClassOptions] = useState([]);
 
   // -- Course Exit Survey States --
-  const [reportMode, setReportMode] = useState("faculty"); // "faculty" | "exit"
-  const [exitForms, setExitForms] = useState([]);
+  const [reportMode, setReportMode] = useState("faculty"); // "faculty" | "exit" | "institution"
   const [exitResponses, setExitResponses] = useState([]);
+  const [exitForms, setExitForms] = useState([]);
 
   // -- Directory Filter & Edit States --
   const [searchRollNo, setSearchRollNo] = useState("");
@@ -148,11 +151,17 @@ export default function HodDashboard({ user }) {
   // -- Student Lifecycle States --
   const [promoteSource, setPromoteSource] = useState("");
   const [promoteTarget, setPromoteTarget] = useState("");
-  const [deleteClassTarget, setDeleteClassTarget] = useState("");
   const [resetClassTarget, setResetClassTarget] = useState("");
   const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [allotmentToDelete, setAllotmentToDelete] = useState(null); // { id, staff, subject }
   const [promoteCandidates, setPromoteCandidates] = useState([]);
+  const [deleteCandidates, setDeleteCandidates] = useState([]);
+  const [resetCandidates, setResetCandidates] = useState([]);
   const [excludedFromPromotion, setExcludedFromPromotion] = useState(new Set());
+  const [excludedFromDeletion, setExcludedFromDeletion] = useState(new Set());
+  const [excludedFromReset, setExcludedFromReset] = useState(new Set());
 
   const fetchData = useCallback(async () => {
     try {
@@ -173,10 +182,6 @@ export default function HodDashboard({ user }) {
 
       setAllStaffList(activeStaff);
 
-      setStaffList(
-        activeStaff.filter((u) => u.dept === user.dept).map((u) => u.name),
-      );
-
       const allSubQ = query(collection(db, "Subjects"));
       const allSubSnap = await getDocs(allSubQ);
       const fetchedAllSubjects = allSubSnap.docs.map((d) => ({
@@ -190,28 +195,38 @@ export default function HodDashboard({ user }) {
 
       const stdQ = query(
         collection(db, "Students"),
-        where("department", "==", user.dept),
+        // Removed department filter to ensure we can find students for division matching
       );
       const stdSnap = await getDocs(stdQ);
-      const fetchedStudents = stdSnap.docs.map((d) => ({
+      const allFetchedStudents = stdSnap.docs.map((d) => ({
         ...d.data(),
         id: d.id,
       }));
-      setStudents(fetchedStudents);
-      console.log("Fetched students:", fetchedStudents);
+      
+      // Filter in memory for the directory tab
+      setStudents(allFetchedStudents.filter(s => s.department === user.dept));
 
       // Fetch Feedbacks for Monitor & Reports
       const feedQ = query(
         collection(db, "Feedbacks"),
-        where("department", "==", user.dept),
+        // Removed department filter to ensure older records without department field are fetched
       );
       const feedSnap = await getDocs(feedQ);
-      const fetchedFeedbacks = feedSnap.docs
-        .map((d) => ({ ...d.data(), id: d.id }))
-        .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-      setFeedbacks(fetchedFeedbacks);
-      console.log("Fetched feedbacks:", fetchedFeedbacks);
+      const allFetchedFeedbacks = feedSnap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      }));
 
+      // Filter in memory to only include feedbacks for this department or its staff
+      const fetchedFeedbacks = allFetchedFeedbacks
+        .filter((f) => {
+          if (f.department === user.dept) return true;
+          const staffObj = activeStaff.find((s) => s.name === f.staffName);
+          return staffObj && staffObj.dept === user.dept;
+        })
+        .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+
+      setFeedbacks(fetchedFeedbacks);
       // Fetch Course Exit Data
       const exitFormsQ = query(
         collection(db, "CourseExitForms"),
@@ -579,6 +594,10 @@ export default function HodDashboard({ user }) {
 
   const handleAllotment = async (e) => {
     e.preventDefault();
+    if (!allotForm.staff || !allotForm.subject || !allotForm.tClass) {
+      warning("Please select faculty, subject, and class before confirming.");
+      return;
+    }
     try {
       const selectedSubjectData = allSubjectList.find(
         (s) =>
@@ -610,13 +629,28 @@ export default function HodDashboard({ user }) {
       });
       setAllotForm({ ...allotForm, staff: "", subject: "" });
       success("Academic allotment confirmed.");
+      fetchData();
     } catch {
       notifyError("Failed to allot faculty.");
     }
   };
 
+  const handleDeleteAllocation = async () => {
+    if (!allotmentToDelete) return;
+
+    try {
+      await deleteDoc(doc(db, "Allocations", allotmentToDelete.id));
+      success("Allotment removed.");
+      setAllotmentToDelete(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      notifyError("Failed to remove allotment.");
+    }
+  };
+
   // --- REPORT ENGINE CALCULATIONS ---
-  const monitorStaffOptions = React.useMemo(() => {
+  const monitorStaffOptions = useMemo(() => {
     const staffNamesWithDepts = allStaffList.map((s) => ({
       name: s.name,
       dept: s.dept,
@@ -629,77 +663,107 @@ export default function HodDashboard({ user }) {
     });
 
     let filtered = staffNamesWithDepts;
-    if (monitorDept && monitorDept !== "All") {
+    if (monitorDept) {
       filtered = filtered.filter((s) => s.dept === monitorDept);
     }
 
     return filtered.map((s) => ({ value: s.name, label: s.name }));
   }, [allStaffList, feedbacks, monitorDept]);
 
-  const filteredFeedbacks = feedbacks.filter((f) => {
-    if (monitorDept && monitorDept !== "All") {
-      const staffObj = allStaffList.find((s) => s.name === f.staffName);
-      if (staffObj) {
-        if (staffObj.dept !== monitorDept) return false;
-      } else {
-        if (monitorDept !== "Unknown") return false;
+  const monitorSubjectOptions = useMemo(() => {
+    if (!monitorStaff) return [];
+    const subjects = [
+      ...new Set(
+        feedbacks
+          .filter((f) => f.staffName === monitorStaff)
+          .map((f) => f.subject),
+      ),
+    ];
+    return subjects.map((s) => ({ value: s, label: s }));
+  }, [feedbacks, monitorStaff]);
+
+  const filteredFeedbacks = useMemo(() => {
+    return feedbacks.filter((f) => {
+      // 1. Department Filter
+      if (monitorDept) {
+        const staffObj = allStaffList.find((s) => s.name === f.staffName);
+        const isDeptMatch = 
+          (f.department === monitorDept) || 
+          (staffObj && staffObj.dept === monitorDept);
+        
+        if (!isDeptMatch) return false;
       }
-    }
+      // 2. Staff Filter
+      if (monitorStaff && f.staffName !== monitorStaff) return false;
+      // 2.5 Subject Filter
+      if (monitorSubject && f.subject !== monitorSubject) return false;
+      return true;
+    });
+  }, [feedbacks, monitorDept, monitorStaff, monitorSubject, allStaffList]);
 
-    if (
-      monitorStaff &&
-      monitorStaff !== "All Faculty" &&
-      f.staffName !== monitorStaff
-    )
-      return false;
-
-    if (monitorDivision && monitorDivision !== "All") {
-      const studentObj = students.find(
-        (s) => s.name === f.studentName && s.targetClass === f.targetClass,
-      );
-      if (!studentObj || studentObj.division !== monitorDivision) return false;
-    }
-    return true;
-  });
   const activeDataSource = reportMode === "exit" ? exitResponses : feedbacks;
 
-  const reportData = activeDataSource.filter((f) => {
-    return (
-      f.staffName === reportStaff &&
-      (reportSubject === "" || f.subject === reportSubject)
-    );
-  });
+  const reportData = useMemo(() => {
+    return activeDataSource.filter((f) => {
+      return (
+        f.staffName === reportStaff &&
+        (reportSubject === "" || f.subject === reportSubject)
+      );
+    });
+  }, [activeDataSource, reportStaff, reportSubject]);
+
   const totalStudents = reportData.length;
 
   // Calculate total students in class, submitted, and remaining
-  const allocation = reportSubject
-    ? allocations.find(
-        (a) => a.staff === reportStaff && a.subject === reportSubject,
-      )
-    : null;
-  const studentsInClass = allocation
-    ? students.filter((s) => {
-        const matchClass =
-          s.targetClass === (allocation.targetClass || allocation.tClass);
-        const matchDiv =
-          allocation.division === "All"
-            ? true
-            : (s.division || "A") === allocation.division;
-        return matchClass && matchDiv;
-      })
-    : [];
+  const allocation = useMemo(() => {
+    return reportSubject
+      ? allocations.find(
+          (a) => a.staff === reportStaff && a.subject === reportSubject,
+        )
+      : null;
+  }, [allocations, reportStaff, reportSubject]);
+
+  const studentsInClass = useMemo(() => {
+    return allocation
+      ? students.filter((s) => {
+          const matchClass =
+            s.targetClass === (allocation.targetClass || allocation.tClass);
+          const matchDiv =
+            allocation.division === "All"
+              ? true
+              : (s.division || "A") === allocation.division;
+          return matchClass && matchDiv;
+        })
+      : [];
+  }, [allocation, students]);
+
   const totalStudentsInClass = studentsInClass.length;
 
-  const submittedStudentNames = new Set(reportData.map((f) => f.studentName));
+  const submittedStudentNames = useMemo(() => new Set(reportData.map((f) => f.studentName)), [reportData]);
   const submittedStudents = submittedStudentNames.size;
-  const remainingStudentsList = studentsInClass.filter(
+  const remainingStudentsList = useMemo(() => studentsInClass.filter(
     (s) => !submittedStudentNames.has(s.name),
-  );
+  ), [studentsInClass, submittedStudentNames]);
   const remainingStudents = remainingStudentsList.length;
 
-  const submittedStudentsList = studentsInClass.filter((s) =>
+  const submittedStudentsList = useMemo(() => studentsInClass.filter((s) =>
     submittedStudentNames.has(s.name),
-  );
+  ), [studentsInClass, submittedStudentNames]);
+
+  const filteredStudents = useMemo(() => {
+    if (!searchRollNo && !filterClass && !filterDivision) return [];
+    return students.filter((s) => {
+      const matchSearch =
+        !searchRollNo ||
+        s.name?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+        s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+        s.prn?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
+        s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase());
+      const matchClass = !filterClass || s.targetClass === filterClass;
+      const matchDiv = !filterDivision || s.division === filterDivision;
+      return matchSearch && matchClass && matchDiv;
+    });
+  }, [students, searchRollNo, filterClass, filterDivision]);
 
   // Debug logging
   console.log("Debug Info:", {
@@ -764,14 +828,9 @@ export default function HodDashboard({ user }) {
       : "0.00";
   const overallAverageOutOf5 =
     maxPossibleScore > 0
-      ? ((grandTotalScore / maxPossibleScore) * 5).toFixed(1)
-      : "0.0";
+      ? Math.round((grandTotalScore / maxPossibleScore) * 5)
+      : "0";
 
-  const reportStaffOptions = reportDept
-    ? allStaffList.filter((s) => s.dept === reportDept).map((s) => s.name)
-    : allStaffList.map((s) => s.name);
-
-  const activeFormSource = reportMode === "exit" ? exitForms : feedbacks;
   const staffSubjects = [
     ...new Set(
       [...feedbacks, ...exitForms]
@@ -881,20 +940,35 @@ export default function HodDashboard({ user }) {
       return;
     }
 
-    const confirmMsg = `⚠ DANGER: Are you sure you want to PERMANENTLY DELETE all ${studentsToDelete.length} students in the 3rd Year Batch (${target})? \n\nThis cannot be undone.`;
+    setDeleteCandidates(studentsToDelete);
+    setExcludedFromDeletion(new Set());
+    setShowDeleteModal(true);
+  };
+
+  const executeBulkDelete = async () => {
+    const finalDeleteList = deleteCandidates.filter(
+      (s) => !excludedFromDeletion.has(s.id),
+    );
+
+    if (finalDeleteList.length === 0) {
+      warning("No students selected for deletion.");
+      return;
+    }
+
+    const confirmMsg = `PERMANENTLY DELETE ${finalDeleteList.length} students? This cannot be undone.`;
     if (!window.confirm(confirmMsg)) return;
 
     setIsSubmitting(true);
     try {
       const batch = writeBatch(db);
-      studentsToDelete.forEach((std) => {
+      finalDeleteList.forEach((std) => {
         batch.delete(doc(db, "Students", std.id));
       });
       await batch.commit();
       success(
-        `Deleted ${studentsToDelete.length} graduated students from ${target}.`,
+        `Deleted ${finalDeleteList.length} graduated students.`,
       );
-      setDeleteClassTarget("");
+      setShowDeleteModal(false);
       fetchData();
     } catch (err) {
       console.error(err);
@@ -979,13 +1053,26 @@ export default function HodDashboard({ user }) {
       return;
     }
 
-    const confirmMsg = `Reset feedback status and shift semester for ${studentsToShift.length} students in selected year?`;
-    if (!window.confirm(confirmMsg)) return;
+    setResetCandidates(studentsToShift);
+    setExcludedFromReset(new Set());
+    setShowResetModal(true);
+  };
+
+  const executeBulkReset = async () => {
+    const finalResetList = resetCandidates.filter(
+      (s) => !excludedFromReset.has(s.id),
+    );
+
+    if (finalResetList.length === 0) {
+      warning("No students selected for reset.");
+      return;
+    }
 
     setIsSubmitting(true);
+    setShowResetModal(false);
     try {
       const batch = writeBatch(db);
-      studentsToShift.forEach((std) => {
+      finalResetList.forEach((std) => {
         const shiftedClass = getSilentSemesterShiftTarget(std.targetClass);
         batch.update(doc(db, "Students", std.id), {
           targetClass: shiftedClass,
@@ -993,9 +1080,7 @@ export default function HodDashboard({ user }) {
         });
       });
       await batch.commit();
-      success(
-        `Shifted and reset ${studentsToShift.length} students.`,
-      );
+      success("Reset feedback successful.");
       setResetClassTarget("");
       fetchData();
     } catch (err) {
@@ -1041,22 +1126,9 @@ export default function HodDashboard({ user }) {
     }
   };
 
-  const isFilterActive = searchRollNo || filterClass || filterDivision;
   const filteredSubjectList = subjectSemesterFilter
     ? subjectList.filter((s) => String(s.semester || "") === subjectSemesterFilter)
     : subjectList;
-  const filteredStudents = isFilterActive
-    ? students.filter((s) => {
-        const matchRoll = searchRollNo
-          ? s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
-            s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
-            s.name?.toLowerCase().includes(searchRollNo.toLowerCase())
-          : true;
-        const matchClass = filterClass ? s.targetClass === filterClass : true;
-        const matchDiv = filterDivision ? s.division === filterDivision : true;
-        return matchRoll && matchClass && matchDiv;
-      })
-    : [];
 
   return (
     <>
@@ -1308,33 +1380,40 @@ export default function HodDashboard({ user }) {
         )}
 
         {activeTab === "lifecycle" && (
-          <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+          <div className="max-w-5xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
             {/* Student Lifecycle Tools */}
             <Card className="overflow-hidden border-orange-100 shadow-md">
-              <div className="bg-gradient-to-br from-orange-50 via-white to-amber-50/50 p-7 relative">
-                <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-orange-200 shadow-sm">
-                    <RefreshCw className="h-6 w-6 text-orange-600" />
+              <div className="bg-gradient-to-br from-orange-50 via-white to-amber-50/50 p-8 md:p-10 relative">
+                <div className="flex flex-col sm:flex-row sm:items-start gap-5 mb-8">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-orange-200 shadow-sm">
+                    <RefreshCw className="h-7 w-7 text-orange-600" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">
                       Student Lifecycle Tools
                     </h2>
-                    <p className="text-slate-500 text-sm mt-1 font-medium">
+                    <p className="text-slate-500 text-base mt-1 font-semibold">
                       Manage student promotions, semester feedback resets, and graduations.
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {/* Batch Promotion */}
-                  <div className="p-5 bg-white/60 rounded-2xl border border-orange-100 backdrop-blur-sm space-y-4">
-                    <h4 className="text-xs font-bold text-orange-700 uppercase tracking-widest flex items-center gap-2">
-                      <ArrowUpCircle size={14} /> Smart Promotion (FY → SY → TY)
+                  <div className="p-6 bg-white/60 rounded-3xl border border-orange-100 backdrop-blur-sm space-y-5">
+                    <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                      <ArrowUpCircle size={16} /> Smart Promotion (FY → SY → TY)
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-500 ml-1">
+                    <div className="flex items-start gap-3 bg-orange-50/50 p-3 rounded-xl border border-orange-100/50">
+                      <AlertCircle size={16} className="text-orange-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-orange-700 font-bold leading-relaxed uppercase tracking-tight">
+                        Workflow Order: 1. Clear 3rd Year students first. 2. Promote 2nd Year to 3rd Year. 3. Finally Promote 1st Year to 2nd Year. 
+                        This prevents different batches from mixing in the same year.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <span className="text-xs font-black text-slate-500 ml-1 uppercase tracking-wider">
                           SOURCE YEAR
                         </span>
                         <CustomSelect
@@ -1344,8 +1423,8 @@ export default function HodDashboard({ user }) {
                           placeholder="Current Year"
                         />
                       </div>
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold text-slate-500 ml-1">
+                      <div className="space-y-2">
+                        <span className="text-xs font-black text-slate-500 ml-1 uppercase tracking-wider">
                           TARGET YEAR
                         </span>
                         <CustomSelect
@@ -1361,19 +1440,19 @@ export default function HodDashboard({ user }) {
                       disabled={
                         isSubmitting || !promoteSource || !promoteTarget
                       }
-                      className="group relative w-full flex h-12 items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 text-sm font-extrabold text-white shadow-[0_8px_20px_-6px_rgba(234,88,12,0.5)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_12px_25px_-6px_rgba(234,88,12,0.6)] active:scale-95 disabled:pointer-events-none disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                      className="group relative w-full flex h-14 items-center justify-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 text-base font-black text-white shadow-[0_10px_25px_-8px_rgba(234,88,12,0.5)] transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_15px_30px_-8px_rgba(234,88,12,0.6)] active:scale-95 disabled:pointer-events-none disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
                     >
                       <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></div>
-                      <span className="relative z-10 flex items-center gap-2 tracking-wide uppercase">
+                      <span className="relative z-10 flex items-center gap-3 tracking-widest uppercase">
                         {isSubmitting ? (
                           <>
-                            <RefreshCw size={18} className="animate-spin" />
+                            <RefreshCw size={20} className="animate-spin" />
                             Processing...
                           </>
                         ) : (
                           <>
                             Promote Batch to Next Year
-                            <ArrowUpCircle size={18} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                            <ArrowUpCircle size={20} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
                           </>
                         )}
                       </span>
@@ -1381,12 +1460,12 @@ export default function HodDashboard({ user }) {
                   </div>
 
                   {/* Semester Isolation / Status Reset */}
-                  <div className="p-5 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-4">
-                    <h4 className="text-xs font-bold text-blue-700 uppercase tracking-widest flex items-center gap-2">
-                      <RefreshCw size={14} /> New Semester Feedback Reset
+                  <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100 space-y-5">
+                    <h4 className="text-sm font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
+                      <RefreshCw size={16} /> New Semester Feedback Reset
                     </h4>
-                    <p className="text-xs text-blue-800/80 mb-2 font-medium">Select a year and reset status for the next semester feedback cycle.</p>
-                    <div className="flex gap-4">
+                    <p className="text-sm text-blue-800/80 mb-2 font-bold uppercase tracking-tight">Select a year and reset status for the next semester feedback cycle.</p>
+                    <div className="flex flex-col sm:flex-row gap-4">
                       <div className="flex-1">
                         <CustomSelect
                           value={resetClassTarget}
@@ -1398,7 +1477,7 @@ export default function HodDashboard({ user }) {
                       <button
                         onClick={handleBulkResetStatus}
                         disabled={isSubmitting || !resetClassTarget}
-                        className="px-4 sm:px-6 h-11 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-200 active:scale-95"
+                        className="px-8 h-12 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95"
                       >
                         Reset Feedback Status
                       </button>
@@ -1406,17 +1485,26 @@ export default function HodDashboard({ user }) {
                   </div>
 
                   {/* Batch Deletion */}
-                  <div className="p-5 bg-red-50/30 rounded-2xl border border-red-100 space-y-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="p-6 bg-red-50/30 rounded-3xl border border-red-100 space-y-5 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                     <div>
-                      <h4 className="text-xs font-bold text-red-700 uppercase tracking-widest flex items-center gap-2">
-                        <Trash2 size={14} /> Graduation Cleanup
+                      <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
+                        <Trash2 size={16} /> Graduation Cleanup
                       </h4>
-                      <p className="text-[10px] text-red-800/70 font-semibold mt-1">Permanently remove the outgoing 3rd Year graduating batch.</p>
+                      <div className="space-y-3 mt-3">
+                        <p className="text-xs text-red-800/80 font-black uppercase tracking-tight">Permanently remove the outgoing 3rd Year graduating batch.</p>
+                        <div className="flex items-start gap-3 bg-white/50 p-3 rounded-xl border border-red-100/50 max-w-2xl">
+                          <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-red-600 font-bold leading-relaxed uppercase tracking-tight">
+                            Note: Clear the 3rd year batch BEFORE promoting 2nd year students to 3rd year. 
+                            This prevents newly promoted students from being accidentally cleared.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={handleBulkDeleteStudents}
                       disabled={isSubmitting}
-                      className="px-4 sm:px-6 h-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-red-100 active:scale-95"
+                      className="px-8 h-14 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-100 active:scale-95 shrink-0"
                     >
                       Clear 3rd Year Batch
                     </button>
@@ -1438,8 +1526,8 @@ export default function HodDashboard({ user }) {
                     {filteredStudents.length}
                   </span>
                 </h3>
-                <div className="mt-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                  <div className="relative w-full md:max-w-md">
+                <div className="mt-4 flex flex-col items-stretch gap-4">
+                  <div className="relative w-full">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Search size={16} className="text-slate-400" />
                     </div>
@@ -1451,8 +1539,8 @@ export default function HodDashboard({ user }) {
                       onChange={(e) => setSearchRollNo(e.target.value)}
                     />
                   </div>
-                  <div className="flex gap-3 w-full md:w-auto relative z-[60]">
-                    <div className="w-full md:min-w-[200px] flex-1 md:flex-none">
+                  <div className="flex flex-col sm:flex-row gap-3 w-full relative z-[60]">
+                    <div className="w-full sm:min-w-[200px] flex-1">
                       <CustomSelect
                         value={filterClass}
                         onChange={(val) => setFilterClass(val)}
@@ -1467,7 +1555,7 @@ export default function HodDashboard({ user }) {
                         placeholder="Select Year"
                       />
                     </div>
-                    <div className="w-full md:min-w-[140px] flex-1 md:flex-none">
+                    <div className="w-full sm:min-w-[140px] flex-1">
                       <CustomSelect
                         value={filterDivision}
                         onChange={(val) => setFilterDivision(val)}
@@ -2121,7 +2209,7 @@ export default function HodDashboard({ user }) {
                   <CustomSelect
                     value={allotForm.tClass}
                     onChange={(val) =>
-                      setAllotForm({ ...allotForm, tClass: val, subject: "" })
+                      setAllotForm({ ...allotForm, tClass: val })
                     }
                     options={dynamicClassOptionsForAllotment}
                     placeholder="Target Class"
@@ -2149,13 +2237,58 @@ export default function HodDashboard({ user }) {
                 Confirm Allotment
               </button>
             </form>
+
+            {/* List of current allotments */}
+            <div className="bg-white border-t border-slate-100 p-8">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2">
+                <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+                Current Allotments
+              </h3>
+              <div className="space-y-3">
+                {allocations.length === 0 ? (
+                  <p className="text-center py-6 text-slate-400 text-xs font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    No active allotments found.
+                  </p>
+                ) : (
+                  allocations
+                    .sort((a, b) => a.staff.localeCompare(b.staff))
+                    .map((alloc) => (
+                      <div
+                        key={alloc.id}
+                        className="group flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:border-orange-200 transition-all shadow-sm hover:shadow-md"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-black text-slate-800 truncate">
+                            {alloc.staff}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${!alloc.subject?.trim() ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}>
+                              {alloc.subject?.trim() || "Unnamed Subject"}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md ring-1 ring-slate-100">
+                              {alloc.targetClass || alloc.tClass} · Div {alloc.division}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setAllotmentToDelete({ id: alloc.id, staff: alloc.staff, subject: alloc.subject })}
+                          className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors ml-4"
+                          title="Delete allotment"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
           </Card>
         )}
 
         {/* NEW: MONITOR TAB */}
         {activeTab === "monitor" && (
           <Card className="p-0 border-blue-100 flex flex-col overflow-hidden shadow-md animate-in slide-in-from-bottom-4 duration-500 md:max-h-[85vh]">
-            <div className="p-6 border-b border-blue-50 bg-blue-50/30 flex justify-between items-center gap-4 flex-wrap relative z-[80]">
+            <div className="p-6 border-b border-blue-50 bg-blue-50/30 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-6 relative z-[80]">
               <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800 uppercase tracking-tight">
                 <div className="p-2 bg-blue-100 rounded-xl">
                   <Activity
@@ -2166,8 +2299,8 @@ export default function HodDashboard({ user }) {
                 </div>
                 Live Monitor
               </h2>
-              <div className="flex gap-4 w-full sm:w-auto flex-wrap items-end relative z-[70]">
-                <div className="flex flex-col gap-1.5 w-full sm:w-56 relative z-[60]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:flex xl:flex-row gap-4 w-full lg:w-auto items-end relative z-[70]">
+                <div className="flex flex-col gap-1.5 w-full lg:w-56 relative z-[60]">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
                     Department
                   </span>
@@ -2178,48 +2311,45 @@ export default function HodDashboard({ user }) {
                       setMonitorStaff("");
                     }}
                     options={[
-                      { value: "All", label: "All Departments" },
                       ...departmentsList.map((d) => ({ value: d, label: d })),
                     ]}
-                    placeholder="All Departments"
+                    placeholder="Select Department"
                   />
                 </div>
-                <div className="flex flex-col gap-1.5 w-full sm:w-56 relative z-50">
+                <div className="flex flex-col gap-1.5 w-full lg:w-56 relative z-50">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
                     Filter by Staff
                   </span>
                   <CustomSelect
                     value={monitorStaff}
-                    onChange={(val) => setMonitorStaff(val)}
+                    onChange={(val) => {
+                      setMonitorStaff(val);
+                      setMonitorSubject("");
+                    }}
                     options={monitorStaffOptions}
-                    placeholder="All Faculty"
+                    placeholder="Select Faculty"
                   />
                 </div>
-                <div className="flex flex-col gap-1.5 w-full sm:w-48 relative z-40">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-                    Division
-                  </span>
-                  <CustomSelect
-                    value={monitorDivision}
-                    onChange={(val) => setMonitorDivision(val)}
-                    options={[
-                      { value: "All", label: "All Divisions" },
-                      { value: "A", label: "Div A" },
-                      { value: "B", label: "Div B" },
-                    ]}
-                    placeholder="All Divisions"
-                  />
-                </div>
+                {monitorStaff && (
+                  <div className="flex flex-col gap-1.5 w-full lg:w-56 relative z-[45] animate-in fade-in duration-300">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                      Filter by Subject
+                    </span>
+                    <CustomSelect
+                      value={monitorSubject}
+                      onChange={(val) => setMonitorSubject(val)}
+                      options={monitorSubjectOptions}
+                      placeholder="All Subjects"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
-            {monitorDept &&
-            monitorDept !== "All" &&
-            monitorStaff &&
-            monitorStaff !== "All" &&
-            monitorDivision &&
-            monitorDivision !== "All" ? (
-              <div className="flex-1 overflow-auto bg-slate-50/30">
+              {monitorDept &&
+              monitorStaff &&
+              monitorSubject ? (
+                <div className="flex-1 overflow-auto bg-slate-50/30">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-white sticky top-0 shadow-sm z-10 border-b border-slate-200">
                     <tr>
@@ -2286,15 +2416,233 @@ export default function HodDashboard({ user }) {
                   Select Filters to Monitor
                 </h3>
                 <p className="text-sm text-blue-600/70 font-medium mt-2 max-w-sm mx-auto">
-                  Please select a specific Department, Faculty member, and
-                  Division above to view live feedback data.
+                  Please select a specific Department, Faculty member, and Subject
+                  above to view live feedback data.
                 </p>
               </div>
             )}
           </Card>
         )}
 
-        {/* NEW: REPORTS TAB (Replacing your old filter cards with the integrated Pie/Bar & K15 Dashboard) */}
+      {/* Graduation Cleanup Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="p-6 border-b border-red-100 bg-red-50/30 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-red-900">
+                  Graduation Cleanup (3rd Year)
+                </h3>
+                <p className="text-xs font-bold text-red-600 mt-1">
+                  Uncheck students who failed and should repeat the year.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="p-2 hover:bg-red-100 rounded-xl text-red-400 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 max-h-[50vh] overflow-y-auto bg-slate-50/50">
+              <div className="space-y-2">
+                {deleteCandidates.map((std) => {
+                  const isExcluded = excludedFromDeletion.has(std.id);
+                  return (
+                    <div
+                      key={std.id}
+                      onClick={() => {
+                        const newSet = new Set(excludedFromDeletion);
+                        if (isExcluded) newSet.delete(std.id);
+                        else newSet.add(std.id);
+                        setExcludedFromDeletion(newSet);
+                      }}
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                        isExcluded
+                          ? "bg-amber-50 border-amber-100"
+                          : "bg-white border-slate-200 hover:border-red-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                            isExcluded
+                              ? "border-amber-400 bg-white"
+                              : "border-red-400 bg-red-500 text-white"
+                          }`}
+                        >
+                          {!isExcluded && <CheckCircle size={14} />}
+                          {isExcluded && <div className="w-2 h-2 bg-amber-500 rounded-sm" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`text-xs font-black truncate ${isExcluded ? "text-amber-700" : "text-slate-800"}`}>
+                            {std.name}
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-400">
+                            {std.rollNo} · {std.enrollmentNo}
+                          </p>
+                        </div>
+                      </div>
+                      {isExcluded && (
+                        <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest px-2 py-0.5 bg-amber-100 rounded-md">
+                          Failed/Repeater
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeBulkDelete}
+                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-red-600 shadow-lg shadow-red-200 transition-all hover:scale-[1.02] active:scale-95"
+              >
+                Confirm & Delete{" "}
+                {deleteCandidates.length - excludedFromDeletion.size} Students
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Semester Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="p-6 border-b border-blue-100 bg-blue-50/30 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-blue-900">
+                  Confirm Semester Reset
+                </h3>
+                <p className="text-xs font-bold text-blue-600 mt-1">
+                  Reset Feedback Status for Students
+                </p>
+              </div>
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="p-2 hover:bg-blue-100 rounded-xl text-blue-400 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 max-h-[50vh] overflow-y-auto bg-slate-50/50">
+              <div className="space-y-2">
+                {resetCandidates.map((std) => {
+                  const isExcluded = excludedFromReset.has(std.id);
+                  const nextSem = getSilentSemesterShiftTarget(std.targetClass);
+                  return (
+                    <div
+                      key={std.id}
+                      onClick={() => {
+                        const newSet = new Set(excludedFromReset);
+                        if (isExcluded) newSet.delete(std.id);
+                        else newSet.add(std.id);
+                        setExcludedFromReset(newSet);
+                      }}
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                        isExcluded
+                          ? "bg-slate-100 border-slate-200 opacity-60"
+                          : "bg-white border-slate-200 hover:border-blue-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                            isExcluded
+                              ? "border-slate-300 bg-white text-slate-300"
+                              : "border-blue-400 bg-blue-500 text-white"
+                          }`}
+                        >
+                          {!isExcluded && <CheckCircle size={14} />}
+                          {isExcluded && <X size={14} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`text-xs font-black truncate ${isExcluded ? "text-slate-400" : "text-slate-800"}`}>
+                            {std.name}
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-400">
+                            {std.targetClass} → <span className="text-blue-600">{nextSem}</span>
+                          </p>
+                        </div>
+                      </div>
+                      {isExcluded && (
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-200 rounded-md">
+                          Skipped
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeBulkReset}
+                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 shadow-lg shadow-blue-200 transition-all hover:scale-[1.02] active:scale-95"
+              >
+                Confirm & Reset {resetCandidates.length - excludedFromReset.size} Students
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Delete Allotment Confirmation Modal */}
+        {allotmentToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="w-full max-w-md p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="p-8 text-center">
+                <div className="mx-auto w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-6 ring-4 ring-red-50/50">
+                  <Trash2 className="text-red-500" size={32} strokeWidth={2.5} />
+                </div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  Remove Allotment?
+                </h3>
+                <div className="text-sm font-medium text-slate-500 mt-3 leading-relaxed">
+                  You are about to delete the subject allocation for:
+                  <div className="font-black text-slate-800 mt-2 text-base">
+                    {allotmentToDelete.staff}
+                  </div>
+                  <div className="text-xs font-bold text-red-500 uppercase tracking-widest bg-red-50 px-2 py-1 rounded-md inline-block mt-1">
+                    {allotmentToDelete.subject?.trim() || "Unnamed Subject"}
+                  </div>
+                </div>
+                <p className="text-[11px] font-bold text-slate-400 mt-6 uppercase tracking-wider">
+                  This action cannot be undone.
+                </p>
+              </div>
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                <button
+                  onClick={() => setAllotmentToDelete(null)}
+                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm"
+                >
+                  Keep it
+                </button>
+                <button
+                  onClick={handleDeleteAllocation}
+                  className="flex-1 px-6 py-3 rounded-xl text-sm font-black text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  Yes, Delete
+                </button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* NEW: REPORTS TAB */}
         {activeTab === "reports" && (
           <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
             <Card className="p-0 border-slate-200 overflow-hidden shadow-sm print:hidden">
@@ -2304,116 +2652,116 @@ export default function HodDashboard({ user }) {
                   Report Configuration
                 </h3>
               </div>
-              <div className="p-6 bg-white flex flex-wrap gap-5 items-end justify-between">
-                <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
-                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Academic Year
-                    </label>
-                    <input
-                      type="text"
-                      value={acadYear}
-                      onChange={(e) => setAcadYear(e.target.value)}
-                      className="input-app text-sm font-bold py-2.5"
-                      placeholder="e.g. 2024-25"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Semester
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={3}
-                      value={semester}
-                      onChange={(e) =>
-                        setSemester(
-                          e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
-                        )
-                      }
-                      className="input-app text-sm font-bold py-2.5"
-                      placeholder="e.g. VI"
-                    />
-                  </div>
-                  <div className="flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Department
-                    </label>
-                    <CustomSelect
-                      value={reportDept}
-                      onChange={(val) => {
-                        setReportDept(val);
-                        setReportStaff("");
-                        setReportSubject("");
-                      }}
-                      options={[
-                        { value: "", label: "All Departments" },
-                        ...departmentsList.map((d) => ({
-                          value: d,
-                          label: d,
-                        })),
-                      ]}
-                      placeholder="Select Department"
-                    />
-                  </div>
-                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Faculty
-                    </label>
-                    <CustomSelect
-                      value={reportStaff}
-                      onChange={(val) => {
-                        setReportStaff(val);
-                        const nextSubjects = [
-                          ...new Set(
-                            [...feedbacks, ...exitForms]
-                              .filter((f) => f.staffName === val)
-                              .map((f) => f.subject),
-                          ),
-                        ];
-                        setReportSubject(
-                          nextSubjects.length > 0 ? nextSubjects[0] : "",
-                        );
-                      }}
-                      options={(reportDept
-                        ? allStaffList
-                            .filter((s) => s.dept === reportDept)
-                            .map((s) => s.name)
-                        : allStaffList.map((s) => s.name)
-                      ).map((s) => ({ value: s, label: s }))}
-                      placeholder="All Faculty"
-                    />
-                  </div>
-                  {reportStaff && (
-                    <div className="flex-[2] min-w-0 sm:min-w-[200px] animate-in fade-in duration-300 relative z-50">
-                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                        Subject
-                      </label>
-                      <CustomSelect
-                        value={reportSubject}
-                        onChange={(val) => setReportSubject(val)}
-                        options={staffSubjects.map((s) => ({
-                          value: s,
-                          label: s,
-                        }))}
-                        placeholder="All Subjects"
-                      />
-                    </div>
-                  )}
+            <div className="p-6 md:p-8 flex flex-col gap-6 items-stretch justify-between">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-5 flex-1 w-full xl:w-auto items-end">
+                <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                    Academic Year
+                  </label>
+                  <input
+                    type="text"
+                    value={acadYear}
+                    onChange={(e) => setAcadYear(e.target.value)}
+                    className="input-app text-sm font-bold py-2.5 w-full"
+                    placeholder="e.g. 2024-25"
+                  />
                 </div>
-                <button
-                  onClick={() => {
-                    if (!acadYear || !semester) {
-                      notifyError("Academic Year and Semester are required before printing.");
-                      return;
+                <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                    Semester
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    value={semester}
+                    onChange={(e) =>
+                      setSemester(
+                        e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
+                      )
                     }
-                    window.print();
-                  }}
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto"
-                >
-                  <Printer size={18} strokeWidth={2.5} /> Print Report
-                </button>
+                    className="input-app text-sm font-bold py-2.5 w-full"
+                    placeholder="e.g. VI"
+                  />
+                </div>
+                <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                    Department
+                  </label>
+                  <CustomSelect
+                    value={reportDept}
+                    onChange={(val) => {
+                      setReportDept(val);
+                      setReportStaff("");
+                      setReportSubject("");
+                    }}
+                    options={[
+                      { value: "", label: "All Departments" },
+                      ...departmentsList.map((d) => ({
+                        value: d,
+                        label: d,
+                      })),
+                    ]}
+                    placeholder="Select Department"
+                  />
+                </div>
+                <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
+                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                    Faculty
+                  </label>
+                  <CustomSelect
+                    value={reportStaff}
+                    onChange={(val) => {
+                      setReportStaff(val);
+                      const nextSubjects = [
+                        ...new Set(
+                          [...feedbacks, ...exitForms]
+                            .filter((f) => f.staffName === val)
+                            .map((f) => f.subject),
+                        ),
+                      ];
+                      setReportSubject(
+                        nextSubjects.length > 0 ? nextSubjects[0] : "",
+                      );
+                    }}
+                    options={(reportDept
+                      ? allStaffList
+                          .filter((s) => s.dept === reportDept)
+                          .map((s) => s.name)
+                      : allStaffList.map((s) => s.name)
+                    ).map((s) => ({ value: s, label: s }))}
+                    placeholder="All Faculty"
+                  />
+                </div>
+                {reportStaff && (
+                  <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] animate-in fade-in duration-300 relative z-50">
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                      Subject
+                    </label>
+                    <CustomSelect
+                      value={reportSubject}
+                      onChange={(val) => setReportSubject(val)}
+                      options={staffSubjects.map((s) => ({
+                        value: s,
+                        label: s,
+                      }))}
+                      placeholder="All Subjects"
+                    />
+                  </div>
+                )}
               </div>
+              <button
+                onClick={() => {
+                  if (!acadYear || !semester) {
+                    notifyError("Academic Year and Semester are required before printing.");
+                    return;
+                  }
+                  window.print();
+                }}
+                className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full lg:w-auto mt-2"
+              >
+                <Printer size={18} strokeWidth={2.5} /> Print Report
+              </button>
+            </div>
             </Card>
 
             <div className="flex justify-center mb-6 mt-2 print:hidden print-hide" style={{ "@media print": { display: "none" } }}>
@@ -2433,9 +2781,11 @@ export default function HodDashboard({ user }) {
               </div>
             </div>
 
-            {reportStaff && totalStudents > 0 && qCount > 0 ? (
+            {(reportStaff && totalStudents > 0 && qCount > 0) ? (
               <>
                 {/* --- OVERALL RATING DONUT CHART (Hidden when printing) --- */}
+                {reportMode !== "institution" && (
+                <>
                 <Card className="p-8 border-slate-100 shadow-sm print:hidden">
                   <div className="flex items-center justify-between mb-8">
                     <div>
@@ -2501,9 +2851,11 @@ export default function HodDashboard({ user }) {
                     ))}
                   </div>
                 </div>
+                </>
+                )}
 
                 {/* --- OFFICIAL MSBTE K15 TABLE (Visible in browser AND in print mode) --- */}
-                {reportMode !== "exit" && (
+                {reportMode === "faculty" && (
                   <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0">
                     <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
                       <h3 className="text-sm">
@@ -2784,138 +3136,6 @@ export default function HodDashboard({ user }) {
                   </div>
                 )}
 
-                {reportMode === "institution" && (
-                  <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto text-black mt-8 print:mt-0 uppercase font-sans">
-                    <div className="text-center font-bold mb-6 border-b-2 border-black pb-6">
-                      <h3 className="text-sm tracking-tight uppercase">
-                        Solapur Education Society's Polytechnic, Solapur
-                      </h3>
-                      <h2 className="text-xl mt-2 font-black tracking-widest border-t border-black pt-4 inline-block px-8">
-                        STUDENT SATISFACTION FEEDBACK
-                      </h2>
-                      <p className="mt-2 text-sm italic">
-                        Annual Institutional Survey • {user.dept} Dept
-                      </p>
-                    </div>
-
-                    <div className="mb-6 grid grid-cols-2 gap-4 text-sm font-bold px-2">
-                      <p>Academic Year : {acadYear}</p>
-                      <p className="text-right">
-                        Report Date: {new Date().toLocaleDateString("en-GB")}
-                      </p>
-                    </div>
-
-                    <table className="w-full text-[10px] border-collapse border-2 border-black text-center">
-                      <thead>
-                        <tr className="font-extrabold bg-slate-100 print:bg-transparent border-b-2 border-black">
-                          <th className="border border-black p-2 w-10 text-[11px]">
-                            Sr. No.
-                          </th>
-                          <th className="border border-black p-2 text-left min-w-[200px] text-[11px]">
-                            Parameters
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Excellent 5
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Very good 4
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Good 3
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Satisfactory 2
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Average 1
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            Max. Marks
-                          </th>
-                          <th className="border border-black p-2 w-14">
-                            TOTAL
-                          </th>
-                          <th className="border border-black p-2 w-14">%</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(() => {
-                          // Filter responses for institution feedback (department specific for HOD)
-                          const instData = instResponses.filter(
-                            (r) =>
-                              r.department === user.dept &&
-                              (!acadYear || r.academicYear === acadYear),
-                          );
-
-                          const respondentsCount = instData.length;
-
-                          return INSTITUTION_QUESTIONS.map((q, idx) => {
-                            const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-                            instData.forEach((r) => {
-                              const val = parseInt(r.scores[idx]);
-                              if (counts[val] !== undefined) counts[val]++;
-                            });
-
-                            const totalScore =
-                              counts[5] * 5 +
-                              counts[4] * 4 +
-                              counts[3] * 3 +
-                              counts[2] * 2 +
-                              counts[1] * 1;
-                            const maxMarks = respondentsCount * 5;
-                            const percentage =
-                              maxMarks > 0
-                                ? ((totalScore / maxMarks) * 100).toFixed(1)
-                                : "0.0";
-
-                            return (
-                              <tr key={idx} className="border-b border-black">
-                                <td className="border border-black p-1.5 font-bold">
-                                  {idx + 1}
-                                </td>
-                                <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">
-                                  {q}
-                                </td>
-                                <td className="border border-black p-1.5">
-                                  {counts[5]}
-                                </td>
-                                <td className="border border-black p-1.5">
-                                  {counts[4]}
-                                </td>
-                                <td className="border border-black p-1.5">
-                                  {counts[3]}
-                                </td>
-                                <td className="border border-black p-1.5">
-                                  {counts[2]}
-                                </td>
-                                <td className="border border-black p-1.5">
-                                  {counts[1]}
-                                </td>
-                                <td className="border border-black p-1.5 font-black">
-                                  {maxMarks}
-                                </td>
-                                <td className="border border-black p-1.5 font-black">
-                                  {totalScore}
-                                </td>
-                                <td className="border border-black p-1.5 font-black">
-                                  {percentage}
-                                </td>
-                              </tr>
-                            );
-                          });
-                        })()}
-                      </tbody>
-                    </table>
-
-                    <div className="mt-12 flex justify-end pr-12 font-black text-sm print:mt-28">
-                      <div className="text-center">
-                        <div className="w-56 border-b-2 border-dotted border-black mb-1"></div>
-                        <p>Department Head Signature</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* --- K15 REPORT VISUALIZATION (Admin style charts - Hidden when printing) --- */}
                 <div className="mt-12 print:hidden mb-12">
                   <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
@@ -3015,9 +3235,9 @@ export default function HodDashboard({ user }) {
                             scoreCounts[idx][3] * 3 +
                             scoreCounts[idx][2] * 2 +
                             scoreCounts[idx][1] * 1;
-                          const qAvg = (qTotalScore / totalStudents).toFixed(1);
+                          const qAvg = Math.round(qTotalScore / totalStudents);
                           const widthPercent = (qAvg / 5) * 100;
-                          const numAvg = parseFloat(qAvg);
+                          const numAvg = qAvg;
                           const barColor =
                             numAvg >= 4.5
                               ? "bg-green-500"

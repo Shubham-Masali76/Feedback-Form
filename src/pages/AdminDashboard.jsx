@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Building2,
   Users,
@@ -109,7 +109,6 @@ export default function AdminDashboard() {
   const [reportStaff, setReportStaff] = useState("");
   const [acadYear, setAcadYear] = useState("");
   const [semester, setSemester] = useState("");
-  const [reportYearLevel, setReportYearLevel] = useState("");
 
   const [globalExitForms, setGlobalExitForms] = useState([]);
   const [globalExitResponses, setGlobalExitResponses] = useState([]);
@@ -384,27 +383,32 @@ export default function AdminDashboard() {
   };
 
   // --- REPORT ENGINE CALCULATIONS ---
-  const activeDataSource =
-    reportMode === "exit"
+  const activeDataSource = useMemo(() => {
+    return reportMode === "exit"
       ? globalExitResponses
       : reportMode === "institution"
         ? globalInstResponses
         : globalFeedbacks;
+  }, [reportMode, globalExitResponses, globalInstResponses, globalFeedbacks]);
 
-  const reportData = activeDataSource.filter((f) => {
-    const matchDept = !reportDept || f.department === reportDept;
-    if (reportMode === "institution") {
-      const matchYear = !acadYear || f.academicYear === acadYear;
-      return matchDept && matchYear;
-    }
-    const matchStaff = f.staffName === reportStaff;
-    const matchSub = !reportSubject || f.subject === reportSubject;
-    return matchDept && matchStaff && matchSub;
-  });
+  const reportData = useMemo(() => {
+    return activeDataSource.filter((f) => {
+      const matchDept = !reportDept || f.department === reportDept;
+      if (reportMode === "institution") {
+        const matchYear = !acadYear || f.academicYear === acadYear;
+        const matchYearLevel = true; // reportYearLevel removed
+        return matchDept && matchYear && matchYearLevel;
+      }
+      const matchStaff = f.staffName === reportStaff;
+      const matchSub = !reportSubject || f.subject === reportSubject;
+      return matchDept && matchStaff && matchSub;
+    });
+  }, [activeDataSource, reportMode, reportDept, acadYear, reportStaff, reportSubject]);
+
   const totalStudents = reportData.length;
 
-  const activeExitForm =
-    reportMode === "exit" && reportSubject
+  const activeExitForm = useMemo(() => {
+    return reportMode === "exit" && reportSubject
       ? globalExitForms.find(
           (f) =>
             f.staffName === reportStaff &&
@@ -412,42 +416,48 @@ export default function AdminDashboard() {
             f.department === reportDept,
         )
       : null;
-  const activeQuestions =
-    reportMode === "exit"
+  }, [reportMode, reportSubject, globalExitForms, reportStaff, reportDept]);
+
+  const activeQuestions = useMemo(() => {
+    return reportMode === "exit"
       ? activeExitForm?.questions || []
       : reportMode === "institution"
         ? INSTITUTION_QUESTIONS
         : FEEDBACK_QUESTIONS;
+  }, [reportMode, activeExitForm]);
+
   const qCount = activeQuestions.length;
 
-  const scoreCounts = Array.from({ length: qCount }, () => ({
-    5: 0,
-    4: 0,
-    3: 0,
-    2: 0,
-    1: 0,
-  }));
-  if (totalStudents > 0) {
-    reportData.forEach((fb) => {
-      Object.keys(fb.scores).forEach((qIndex) => {
-        const rating = parseInt(fb.scores[qIndex]);
-        if (scoreCounts[qIndex] && scoreCounts[qIndex][rating] !== undefined)
-          scoreCounts[qIndex][rating]++;
+  const scoreCounts = useMemo(() => {
+    const counts = Array.from({ length: qCount }, () => ({
+      5: 0, 4: 0, 3: 0, 2: 0, 1: 0,
+    }));
+    if (totalStudents > 0) {
+      reportData.forEach((fb) => {
+        Object.keys(fb.scores).forEach((qIndex) => {
+          const rating = parseInt(fb.scores[qIndex]);
+          if (counts[qIndex] && counts[qIndex][rating] !== undefined)
+            counts[qIndex][rating]++;
+        });
       });
-    });
-  }
+    }
+    return counts;
+  }, [qCount, totalStudents, reportData]);
 
-  const colTotals = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-  const colScores = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-  let grandTotalScore = 0;
+  const { colTotals, colScores, grandTotalScore } = useMemo(() => {
+    const totals = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const scores = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    let grandTotal = 0;
 
-  for (let i = 0; i < qCount; i++) {
-    [5, 4, 3, 2, 1].forEach((rating) => {
-      colTotals[rating] += scoreCounts[i][rating];
-      colScores[rating] += scoreCounts[i][rating] * rating;
-      grandTotalScore += scoreCounts[i][rating] * rating;
-    });
-  }
+    for (let i = 0; i < qCount; i++) {
+      [5, 4, 3, 2, 1].forEach((rating) => {
+        totals[rating] += scoreCounts[i][rating];
+        scores[rating] += scoreCounts[i][rating] * rating;
+        grandTotal += scoreCounts[i][rating] * rating;
+      });
+    }
+    return { colTotals: totals, colScores: scores, grandTotalScore: grandTotal };
+  }, [qCount, scoreCounts]);
 
   const maxPossibleScore = totalStudents * qCount * 5;
   const marksOutOf25 =
@@ -456,37 +466,26 @@ export default function AdminDashboard() {
       : "0.00";
   const overallAverageOutOf5 =
     maxPossibleScore > 0
-      ? ((grandTotalScore / maxPossibleScore) * 5).toFixed(1)
-      : "0.0";
+      ? Math.round((grandTotalScore / maxPossibleScore) * 5)
+      : "0";
+  
+  const filteredStaffList = useMemo(() => {
+    return globalStaffList
+      .filter((s) => s.dept === reportDept && s.active !== false)
+      .map((s) => s.name);
+  }, [globalStaffList, reportDept]);
 
-  const totalVotes =
-    colTotals[5] + colTotals[4] + colTotals[3] + colTotals[2] + colTotals[1];
-  const p5 = totalVotes ? (colTotals[5] / totalVotes) * 100 : 0;
-  const p4 = totalVotes ? (colTotals[4] / totalVotes) * 100 : 0;
-  const p3 = totalVotes ? (colTotals[3] / totalVotes) * 100 : 0;
-  const p2 = totalVotes ? (colTotals[2] / totalVotes) * 100 : 0;
-  const p1 = totalVotes ? (colTotals[1] / totalVotes) * 100 : 0;
-
-  const pieChartStyle = {
-    background: `conic-gradient(#22c55e 0% ${p5}%, #3b82f6 ${p5}% ${p5 + p4}%, #eab308 ${p5 + p4}% ${p5 + p4 + p3}%, #f97316 ${p5 + p4 + p3}% ${p5 + p4 + p3 + p2}%, #ef4444 ${p5 + p4 + p3 + p2}% 100%)`,
-  };
-
-  // Active faculty only (retired / deactivated users excluded)
-  const filteredStaffList = globalStaffList
-    .filter((s) => s.dept === reportDept && s.active !== false)
-    .map((s) => s.name);
-
-  const activeFormSource =
-    reportMode === "exit" ? globalExitForms : globalFeedbacks;
-  const staffSubjects = [
-    ...new Set(
-      [...globalFeedbacks, ...globalExitForms]
-        .filter(
-          (f) => f.staffName === reportStaff && f.department === reportDept,
-        )
-        .map((f) => f.subject),
-    ),
-  ];
+  const staffSubjects = useMemo(() => {
+    return [
+      ...new Set(
+        [...globalFeedbacks, ...globalExitForms]
+          .filter(
+            (f) => f.staffName === reportStaff && f.department === reportDept,
+          )
+          .map((f) => f.subject),
+      ),
+    ];
+  }, [globalFeedbacks, globalExitForms, reportStaff, reportDept]);
 
   const staffAccounts = globalStaffList
     .filter((u) => u.role === "staff" || u.role === "hod")
@@ -1154,9 +1153,9 @@ export default function AdminDashboard() {
                 Global Report Configuration
               </h3>
             </div>
-            <div className="p-6 md:p-8 flex flex-wrap gap-5 items-end justify-between">
-              <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
-                <div className="flex-1 min-w-0 sm:min-w-[120px]">
+            <div className="p-6 md:p-8 flex flex-col gap-6 items-stretch justify-between">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:flex xl:flex-wrap gap-5 flex-1 w-full xl:w-auto">
+                <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Academic Year
                   </label>
@@ -1164,28 +1163,30 @@ export default function AdminDashboard() {
                     type="text"
                     value={acadYear}
                     onChange={(e) => setAcadYear(e.target.value)}
-                    className="input-app py-2.5 text-sm font-bold px-4"
+                    className="input-app py-2.5 text-sm font-bold px-4 w-full"
                     placeholder="e.g. 2025-26"
                   />
                 </div>
-                <div className="flex-1 min-w-0 sm:min-w-[120px]">
-                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
-                    Semester
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={3}
-                    value={semester}
-                    onChange={(e) =>
-                      setSemester(
-                        e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
-                      )
-                    }
-                    className="input-app py-2.5 text-sm font-bold px-4"
-                    placeholder="e.g. VI"
-                  />
-                </div>
-                <div className="flex-[1.5] min-w-0 sm:min-w-[200px] relative z-50">
+                {reportMode !== "institution" && (
+                  <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
+                      Semester
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={3}
+                      value={semester}
+                      onChange={(e) =>
+                        setSemester(
+                          e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
+                        )
+                      }
+                      className="input-app py-2.5 text-sm font-bold px-4 w-full"
+                      placeholder="e.g. VI"
+                    />
+                  </div>
+                )}
+                <div className="w-full sm:w-auto flex-[1.5] min-w-0 sm:min-w-[200px] relative z-50">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Department
                   </label>
@@ -1202,8 +1203,8 @@ export default function AdminDashboard() {
                     placeholder="Choose Department"
                   />
                 </div>
-                {reportDept && (
-                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-40 animate-in fade-in duration-300">
+                {reportMode !== "institution" && reportDept && (
+                  <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-40 animate-in fade-in duration-300">
                     <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                       Faculty
                     </label>
@@ -1221,8 +1222,8 @@ export default function AdminDashboard() {
                     />
                   </div>
                 )}
-                {reportStaff && (
-                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-[35] animate-in fade-in duration-300">
+                {reportMode !== "institution" && reportStaff && (
+                  <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-[35] animate-in fade-in duration-300">
                     <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                       Subject
                     </label>
@@ -1241,13 +1242,17 @@ export default function AdminDashboard() {
 
               <button
                 onClick={() => {
-                  if (!acadYear || !semester) {
-                    notifyError("Academic Year and Semester are required before printing.");
+                  if (!acadYear) {
+                    notifyError("Academic Year is required before printing.");
+                    return;
+                  }
+                  if (reportMode !== "institution" && !semester) {
+                    notifyError("Semester is required before printing.");
                     return;
                   }
                   window.print();
                 }}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full xl:w-auto mt-4 xl:mt-0"
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20 hover:from-purple-700 hover:to-indigo-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full lg:w-auto mt-2"
               >
                 <Printer size={18} strokeWidth={2.5} /> Print Report
               </button>
@@ -1343,9 +1348,9 @@ export default function AdminDashboard() {
                         scoreCounts[idx][3] * 3 +
                         scoreCounts[idx][2] * 2 +
                         scoreCounts[idx][1] * 1;
-                      const qAvg = (qTotalScore / totalStudents).toFixed(1);
+                      const qAvg = Math.round(qTotalScore / totalStudents);
                       const widthPercent = (qAvg / 5) * 100;
-                      const numAvg = parseFloat(qAvg);
+                      const numAvg = qAvg;
                       const barColor =
                         numAvg >= 4.5
                           ? "bg-green-500"
@@ -1380,7 +1385,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* --- OFFICIAL MSBTE K15 TABLE (Printable) --- */}
-              {reportMode !== "exit" && (
+              {reportMode === "faculty" && (
                 <div className="bg-white p-8 md:p-12 border border-slate-300 print:border-none print:p-0 print:m-0 w-full overflow-x-auto print:overflow-visible text-black mt-8 print:mt-0">
                   <div className="text-center font-bold mb-4 border-b-2 border-black pb-4 relative">
                     <h3 className="text-sm">
@@ -1637,9 +1642,10 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
 
-                  <div className="mt-12 flex justify-end pr-12 font-bold text-sm print:mt-28">
-                    <div className="text-left border-black p-4">
-                      <p>Signature of Principal :- ________________</p>
+                  <div className="mt-12 flex justify-end px-4 font-black text-sm print:mt-28">
+                    <div className="text-center w-48">
+                      <div className="w-full border-b-2 border-dotted border-black mb-2"></div>
+                      <p>Principal Signature</p>
                     </div>
                   </div>
                 </div>
@@ -1673,99 +1679,85 @@ export default function AdminDashboard() {
                         <th className="border border-black p-2 print:py-1 print:px-1 text-left min-w-[200px]">
                           Parameters
                         </th>
+                        <th className="border border-black p-2 w-10">5</th>
+                        <th className="border border-black p-2 w-10">4</th>
+                        <th className="border border-black p-2 w-10">3</th>
+                        <th className="border border-black p-2 w-10">2</th>
+                        <th className="border border-black p-2 w-10">1</th>
+                        <th className="border border-black p-2 w-14">MAX</th>
+                        <th className="border border-black p-2 w-14">TOTAL</th>
                         <th className="border border-black p-2 w-14">%</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(() => {
-                        // Filter responses for institution feedback
-                        const instData = globalInstResponses.filter(
-                          (r) =>
-                            (!reportDept || r.department === reportDept) &&
-                            (!acadYear || r.academicYear === acadYear) &&
-                            (!reportYearLevel ||
-                              r.yearLevel === reportYearLevel),
+                      {INSTITUTION_QUESTIONS.map((q, idx) => {
+                        const totalScore =
+                          scoreCounts[idx][5] * 5 +
+                          scoreCounts[idx][4] * 4 +
+                          scoreCounts[idx][3] * 3 +
+                          scoreCounts[idx][2] * 2 +
+                          scoreCounts[idx][1] * 1;
+                        const maxMarks = totalStudents * 5;
+                        const percentage =
+                          maxMarks > 0
+                            ? ((totalScore / maxMarks) * 100).toFixed(1)
+                            : "0.0";
+
+                        return (
+                          <tr key={idx} className="border-b border-black">
+                            <td className="border border-black p-1.5 font-bold">
+                              {idx + 1}
+                            </td>
+                            <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">
+                              {q}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][5]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][4]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][3]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][2]}
+                            </td>
+                            <td className="border border-black p-1.5">
+                              {scoreCounts[idx][1]}
+                            </td>
+                            <td className="border border-black p-1.5 font-black">
+                              {maxMarks}
+                            </td>
+                            <td className="border border-black p-1.5 font-black">
+                              {totalScore}
+                            </td>
+                            <td className="border border-black p-1.5 font-black">
+                              {percentage}
+                            </td>
+                          </tr>
                         );
-
-                        const respondentsCount = instData.length;
-
-                        return INSTITUTION_QUESTIONS.map((q, idx) => {
-                          const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-                          instData.forEach((r) => {
-                            const val = parseInt(r.scores[idx]);
-                            if (counts[val] !== undefined) counts[val]++;
-                          });
-
-                          const totalScore =
-                            counts[5] * 5 +
-                            counts[4] * 4 +
-                            counts[3] * 3 +
-                            counts[2] * 2 +
-                            counts[1] * 1;
-                          const maxMarks = respondentsCount * 5;
-                          const percentage =
-                            maxMarks > 0
-                              ? ((totalScore / maxMarks) * 100).toFixed(1)
-                              : "0.0";
-
-                          return (
-                            <tr key={idx} className="border-b border-black">
-                              <td className="border border-black p-1.5 font-bold">
-                                {idx + 1}
-                              </td>
-                              <td className="border border-black p-1.5 text-left font-bold text-[11px] leading-tight">
-                                {q}
-                              </td>
-                              <td className="border border-black p-1.5">
-                                {counts[5]}
-                              </td>
-                              <td className="border border-black p-1.5">
-                                {counts[4]}
-                              </td>
-                              <td className="border border-black p-1.5">
-                                {counts[3]}
-                              </td>
-                              <td className="border border-black p-1.5">
-                                {counts[2]}
-                              </td>
-                              <td className="border border-black p-1.5">
-                                {counts[1]}
-                              </td>
-                              <td className="border border-black p-1.5 font-black">
-                                {maxMarks}
-                              </td>
-                              <td className="border border-black p-1.5 font-black">
-                                {totalScore}
-                              </td>
-                              <td className="border border-black p-1.5 font-black">
-                                {percentage}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
+                      })}
                     </tbody>
                   </table>
 
-                  <div className="mt-20 flex justify-between items-end px-4 font-black text-sm print:mt-32">
-                    <div className="text-center">
-                      <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
-                      <p>Head of Department</p>
-                    </div>
-                    <div className="text-center">
-                      <div className="w-48 border-b-2 border-dotted border-black mb-2"></div>
+                  <div className="mt-20 flex justify-end px-4 font-black text-sm print:mt-32">
+                    <div className="text-center w-48">
+                      <div className="w-full border-b-2 border-dotted border-black mb-2"></div>
                       <p>Principal Signature</p>
                     </div>
                   </div>
                 </div>
               )}
             </>
-          ) : reportDept && reportStaff ? (
+          ) : (reportMode === "institution" || (reportDept && reportStaff)) ? (
             <div className="text-center py-20 opacity-30">
               <h2 className="text-2xl font-black uppercase text-purple-900">
                 {reportMode === "exit" && !reportSubject
                   ? "Select a subject to view Course Exit Analytics"
-                  : `No Data Available for ${reportStaff}`}
+                  : reportMode === "institution"
+                    ? "No Institution Feedback Data Available"
+                    : `No Data Available for ${reportStaff}`}
               </h2>
             </div>
           ) : (

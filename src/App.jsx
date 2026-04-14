@@ -25,7 +25,13 @@ function readInitialSession() {
   try {
     const stored = localStorage.getItem("studentSession");
     if (stored) {
-      return { user: JSON.parse(stored), loading: false };
+      const parsed = JSON.parse(stored);
+      // Force re-login if session is old and missing email
+      if (parsed && parsed.role === "student" && !parsed.email) {
+        localStorage.removeItem("studentSession");
+        return { user: null, loading: true };
+      }
+      return { user: parsed, loading: false };
     }
   } catch (e) {
     console.error(e);

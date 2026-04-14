@@ -21,9 +21,9 @@ export default function CustomSelect({
 
     setDropdownStyle({
       position: "fixed",
-      minWidth: Math.min(rect.width, window.innerWidth - 24) + "px",
-      maxWidth: "calc(100vw - 24px)",
-      left: Math.max(12, Math.min(rect.left, window.innerWidth - rect.width - 12)) + "px",
+      minWidth: Math.min(rect.width, window.innerWidth - 32) + "px",
+      maxWidth: "calc(100vw - 32px)",
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)) + "px",
       top: isBottomClipped ? "auto" : rect.bottom + 8 + "px",
       bottom: isBottomClipped
         ? window.innerHeight - rect.top + 8 + "px"

@@ -18,7 +18,6 @@ import { useNotify } from "../context/NotificationContext.jsx";
 export default function Login({
   onLoginSuccess,
   portalType,
-  loginView,
   setLoginView,
 }) {
   const { error: notifyError, warning } = useNotify();
@@ -26,13 +25,6 @@ export default function Login({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const roles = [
-    { id: "student", label: "Student Portal" },
-    { id: "staff", label: "Staff Portal" },
-    { id: "hod", label: "HOD Portal" },
-    { id: "admin", label: "Admin Portal" },
-  ];
 
   const portalConfig = {
     staff: {

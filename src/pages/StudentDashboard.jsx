@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   GraduationCap,
   Send,
   CheckCircle,
   AlertCircle,
   BookOpen,
-  ChevronDown,
+  ChevronLeft,
   Loader2,
   ClipboardList,
   FileText,
@@ -64,12 +64,12 @@ export default function StudentDashboard({ user }) {
     return `${year - 1}-${String(year).slice(-2)}`;
   };
 
-  const getYearLevel = (tClass) => {
+  const getYearLevel = useCallback((tClass) => {
     const yearNumber = getYearNumberFromClassCode(tClass);
     if (yearNumber === 2) return "SY";
     if (yearNumber === 3) return "TY";
     return "FY";
-  };
+  }, []);
 
   const getSemLabel = (tClass) => {
     if (!tClass) return "I";
@@ -96,6 +96,10 @@ export default function StudentDashboard({ user }) {
 
   useEffect(() => {
     const fetchSystemStatusAndData = async () => {
+      if (!user?.email || !user?.targetClass || !user?.dept) {
+        console.warn("User data incomplete, skipping fetch");
+        return;
+      }
       try {
         const settingsSnap = await getDoc(doc(db, "Settings", "Global"));
         if (!settingsSnap.exists()) {
@@ -105,7 +109,6 @@ export default function StudentDashboard({ user }) {
 
         const autoYear = getAutoAcadYear();
         const autoSem = getSemLabel(user?.targetClass || "");
-        const autoLevel = getYearLevel(user?.targetClass || "");
 
         setCurrentAcadYear(autoYear);
         setCurrentSemester(autoSem);
@@ -167,11 +170,12 @@ export default function StudentDashboard({ user }) {
           const instCheckQ = query(
             collection(db, "InstitutionFeedbackResponses"),
             where("email", "==", user.email),
-            where("academicYear", "==", autoYear),
-            where("yearLevel", "==", autoLevel),
           );
           const instCheckSnap = await getDocs(instCheckQ);
-          if (!instCheckSnap.empty) {
+          const alreadySubmitted = instCheckSnap.docs.some(
+            (doc) => doc.data().academicYear === autoYear,
+          );
+          if (alreadySubmitted) {
             setHasSubmittedInst(true);
           }
         }
@@ -182,14 +186,14 @@ export default function StudentDashboard({ user }) {
         const staffFeedQ = query(
           collection(db, "Feedbacks"),
           where("studentEmail", "==", user.email),
-          where("academicYear", "==", autoYear),
-          where("targetClass", "==", user.targetClass),
         );
         const staffFeedSnap = await getDocs(staffFeedQ);
         const prevStaffSubmissions = [];
         staffFeedSnap.forEach((d) => {
           const data = d.data();
-          // Find matching allocation ID
+          if (data.academicYear !== autoYear) return;
+
+          // Find matching allocation ID from the current semester's filtered allocations
           const match = filteredAllocations.find(
             (a) =>
               a.id === data.allocationId ||
@@ -206,13 +210,13 @@ export default function StudentDashboard({ user }) {
         const exitRespTrackerQ = query(
           collection(db, "CourseExitResponses"),
           where("studentEmail", "==", user.email),
-          where("academicYear", "==", autoYear),
-          where("targetClass", "==", user.targetClass),
         );
         const exitRespTrackerSnap = await getDocs(exitRespTrackerQ);
         const prevExitSubmissions = [];
         exitRespTrackerSnap.forEach((d) => {
           const data = d.data();
+          if (data.academicYear !== autoYear) return;
+
           const match = filteredAllocations.find(
             (a) =>
               a.id === data.allocationId ||
@@ -232,7 +236,7 @@ export default function StudentDashboard({ user }) {
     };
 
     fetchSystemStatusAndData();
-  }, [user.dept]);
+  }, [user.dept, user.email, user.targetClass, getYearLevel]);
 
   const handleRatingChange = (questionIndex, value) => {
     setRatings((prev) => ({ ...prev, [questionIndex]: value }));
@@ -258,6 +262,16 @@ export default function StudentDashboard({ user }) {
 
     if (!selectedAllocation) {
       warning("Select a subject to review first.");
+      return;
+    }
+
+    if (submittedReviews.includes(selectedAllocation)) {
+      warning("Feedback already submitted for this subject.");
+      return;
+    }
+
+    if (!user?.email) {
+      notifyError("User session error. Please log in again.");
       return;
     }
 
@@ -318,6 +332,16 @@ export default function StudentDashboard({ user }) {
       return;
     }
 
+    if (submittedExitSurveys.includes(selectedAllocation)) {
+      warning("Exit survey already submitted for this subject.");
+      return;
+    }
+
+    if (!user?.email) {
+      notifyError("User session error. Please log in again.");
+      return;
+    }
+
     setIsSubmittingExit(true);
     try {
       const targetData = allocations.find((a) => a.id === selectedAllocation);
@@ -364,6 +388,16 @@ export default function StudentDashboard({ user }) {
       warning(
         `Please answer all ${INSTITUTION_QUESTIONS.length} questions before submitting.`,
       );
+      return;
+    }
+
+    if (hasSubmittedInst) {
+      warning("Institution feedback already submitted for this year.");
+      return;
+    }
+
+    if (!user?.email) {
+      notifyError("User session error. Please log in again.");
       return;
     }
 
@@ -527,9 +561,8 @@ export default function StudentDashboard({ user }) {
       )}
 
       <div className="grid lg:grid-cols-3 gap-7">
-        {selectedAllocation !== "institution_survey" && (
-          <div className="lg:col-span-1 space-y-4">
-            <Card className="overflow-hidden p-0 !shadow-soft-lg ring-1 ring-slate-200/60">
+        <div className={`lg:col-span-1 space-y-4 ${selectedAllocation ? "hidden lg:block" : "block"}`}>
+          <Card className="overflow-hidden p-0 !shadow-soft-lg ring-1 ring-slate-200/60">
               <div className="border-b border-slate-200/80 bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-4 text-white">
                 <h2 className="font-display flex items-center gap-2 text-lg font-bold">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
@@ -687,7 +720,6 @@ export default function StudentDashboard({ user }) {
               </div>
             </Card>
           </div>
-        )}
 
         <div
           className={
@@ -725,6 +757,14 @@ export default function StudentDashboard({ user }) {
                 className="flex flex-col animate-in slide-in-from-right duration-500"
               >
                 <div className="border-b border-slate-200/80 bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 px-6 py-6 md:px-8">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAllocation("")}
+                    className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-100/80 transition hover:text-white"
+                  >
+                    <ChevronLeft size={16} />
+                    Back to list
+                  </button>
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-100/90">
                     Annual Survey {currentAcadYear}
                   </p>
@@ -860,6 +900,14 @@ export default function StudentDashboard({ user }) {
                     className="flex flex-col animate-in fade-in duration-300"
                   >
                     <div className="border-b border-slate-200/80 bg-gradient-to-r from-indigo-600 via-blue-700 to-cyan-700 px-6 py-6 md:px-8">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAllocation("")}
+                        className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-blue-100/80 transition hover:text-white lg:hidden"
+                      >
+                        <ChevronLeft size={16} />
+                        Back to list
+                      </button>
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-100/90">
                         Confidential
                       </p>
@@ -970,6 +1018,14 @@ export default function StudentDashboard({ user }) {
                     className="flex flex-col animate-in fade-in duration-300"
                   >
                     <div className="border-b border-slate-200/80 bg-gradient-to-r from-emerald-600 via-teal-700 to-cyan-700 px-6 py-6 md:px-8">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAllocation("")}
+                        className="mb-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-emerald-100/80 transition hover:text-white lg:hidden"
+                      >
+                        <ChevronLeft size={16} />
+                        Back to list
+                      </button>
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-100/90">
                         End of Semester
                       </p>

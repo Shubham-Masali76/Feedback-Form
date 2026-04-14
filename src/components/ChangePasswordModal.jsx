@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import React, { useState, useEffect } from "react";
 import { auth } from "../firebase";
 import {
@@ -20,12 +19,15 @@ export default function ChangePasswordModal({ open, onClose }) {
   const [showPwd2, setShowPwd2] = useState(false);
   const [showPwd3, setShowPwd3] = useState(false);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!open) {
-      setCurrent("");
-      setNext("");
-      setConfirm("");
+      // Use a timeout or move to onClose to avoid synchronous setState in effect
+      const timer = setTimeout(() => {
+        setCurrent("");
+        setNext("");
+        setConfirm("");
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 

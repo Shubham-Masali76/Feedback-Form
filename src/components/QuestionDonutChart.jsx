@@ -41,6 +41,25 @@ const DonutLabel = ({
   );
 };
 
+const CustomTooltip = ({ active, payload, total }) => {
+  if (active && payload && payload.length) {
+    const { name, value } = payload[0].payload;
+    const percent = total > 0 ? (value / total) * 100 : 0;
+    return (
+      <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
+        <p className="font-bold text-sm">{name}</p>
+        <p className="text-xs font-semibold text-blue-300">
+          Responses: {value}
+        </p>
+        <p className="text-xs font-semibold text-emerald-300">
+          {percent.toFixed(1)}%
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 /**
  * Component to display donut chart for a single feedback question
  * @param {string} questionNumber - Q1, Q2, etc.
@@ -88,67 +107,15 @@ export default function QuestionDonutChart({
     );
   }
 
-  // Calculate average score
   const totalScore = Object.keys(scoreCounts).reduce(
     (sum, rating) => sum + parseInt(rating) * scoreCounts[rating],
     0,
   );
   const avgScore =
-    totalResponses > 0 ? (totalScore / totalResponses).toFixed(1) : 0;
+    totalResponses > 0 ? Math.round(totalScore / totalResponses) : 0;
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const { name, value } = payload[0];
-      const total = chartData.reduce((sum, d) => sum + d.value, 0);
-      const percent = total > 0 ? (value / total) * 100 : 0;
-      return (
-        <div className="bg-slate-900 text-white p-3 rounded-lg border border-slate-700 shadow-lg">
-          <p className="font-bold text-sm">{name}</p>
-          <p className="text-xs font-semibold text-blue-300">
-            Responses: {value}
-          </p>
-          <p className="text-xs font-semibold text-emerald-300">
-            {percent.toFixed(1)}%
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const CustomLabel = ({
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    percent,
-  }) => {
-    if (percent < 0.04) return null;
-
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos((-midAngle * Math.PI) / 180);
-    const y = cy + radius * Math.sin((-midAngle * Math.PI) / 180);
-
-    return (
-      <text
-        x={x}
-        y={y}
-        fill="#ffffff"
-        stroke="rgba(0,0,0,0.8)"
-        strokeWidth="3"
-        paintOrder="stroke"
-        textAnchor="middle"
-        dominantBaseline="central"
-        className="text-sm font-black"
-        style={{
-          filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.5))",
-        }}
-      >
-        {`${(percent * 100).toFixed(0)}%`}
-      </text>
-    );
-  };
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const responsiveHeight = isMobile ? 180 : 280; // Even smaller height for mobile
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
@@ -167,51 +134,46 @@ export default function QuestionDonutChart({
       </div>
 
       <div className="mt-auto">
+        <ResponsiveContainer width="100%" height={responsiveHeight}>
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={isMobile ? 30 : 45}
+              outerRadius={isMobile ? 60 : 85}
+              paddingAngle={1}
+              dataKey="value"
+              label={DonutLabel}
+              labelLine={false}
+            >
+              {chartData.map((entry, idx) => (
+                <Cell key={`cell-${idx}`} fill={COLORS[entry.rating]} />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip total={totalResponses} />} />
+          </PieChart>
+        </ResponsiveContainer>
 
-      <ResponsiveContainer width="100%" height={280}>
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={45}
-            outerRadius={85}
-            paddingAngle={1}
-            dataKey="value"
-            label={CustomLabel}
-            labelLine={false}
-          >
-            {chartData.map((entry, idx) => (
-              <Cell key={`cell-${idx}`} fill={COLORS[entry.rating]} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs min-h-[76px] content-start">
-        {chartData.map((item) => {
-          const percentage =
-            totalScore > 0
-              ? (
-                  (item.value /
-                    chartData.reduce((sum, d) => sum + d.value, 0)) *
-                  100
-                ).toFixed(1)
-              : 0;
-          return (
-            <div key={item.rating} className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: COLORS[item.rating] }}
-              ></div>
-              <span className="font-semibold text-slate-700">
-                {item.name}: {item.value} ({percentage}%)
-              </span>
-            </div>
-          );
-        })}
-      </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs min-h-[76px] content-start">
+          {chartData.map((item) => {
+            const percentage =
+              totalResponses > 0
+                ? ((item.value / totalResponses) * 100).toFixed(1)
+                : 0;
+            return (
+              <div key={item.rating} className="flex items-center gap-2">
+                <div
+                  className={`w-3 h-3 rounded-full flex-shrink-0`}
+                  style={{ backgroundColor: COLORS[item.rating] }}
+                ></div>
+                <span className="font-semibold text-slate-700">
+                  {item.name}: {item.value} ({percentage}%)
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
