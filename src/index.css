@@ -48,7 +48,7 @@
   }
   /* Full-page login / gate screens — mesh + noise feel without heavy assets */
   .login-page-root {
-    @apply relative min-h-screen overflow-hidden;
+    @apply relative min-h-dvh overflow-hidden;
     background:
       radial-gradient(
         ellipse 120% 80% at 50% -20%,

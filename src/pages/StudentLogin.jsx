@@ -175,18 +175,18 @@ export default function StudentLogin({
   };
 
   return (
-    <div className="w-full max-w-md">
-      <div className="mb-4 flex flex-col items-center text-center">
-        <h1 className="flex w-full items-center justify-center py-2 font-display text-6xl sm:text-7xl font-extrabold leading-none tracking-[0.08em] transform scale-x-110 origin-center whitespace-nowrap pb-1">
+    <div className="w-full max-w-md px-1 sm:px-0">
+      <div className="mb-4 flex flex-col items-center text-center px-2">
+        <h1 className="flex w-full items-center justify-center py-2 font-display text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold leading-tight tracking-tight origin-center pb-1">
           <span className="bg-gradient-to-r from-blue-700 to-indigo-900 bg-clip-text text-transparent">
             Feedback Portal
           </span>
         </h1>
-        <h2 className="font-display text-2xl sm:text-3xl font-bold text-blue-600 uppercase tracking-[0.15em] transform scale-x-110 origin-center mt-2 mb-2 whitespace-nowrap">
+        <h2 className="font-display text-base sm:text-xl md:text-2xl lg:text-3xl font-bold text-blue-600 uppercase tracking-wide sm:tracking-widest origin-center mt-2 mb-2">
           SES Polytechnic Solapur
         </h2>
         {loginView !== "" && (
-          <p className="max-w-full whitespace-nowrap text-sm sm:text-base font-medium tracking-[0.05em] transform scale-x-105 origin-center leading-snug text-slate-500 mt-1">
+          <p className="max-w-xs sm:max-w-full text-xs sm:text-sm md:text-base font-medium tracking-wide origin-center leading-snug text-slate-500 mt-1">
             Roll + PRN, then one-time code to your email.
           </p>
         )}

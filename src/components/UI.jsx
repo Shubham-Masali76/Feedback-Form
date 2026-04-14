@@ -17,7 +17,7 @@ export const Button = ({
   title = "",
 }) => {
   const base =
-    "px-4 py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 no-print disabled:cursor-not-allowed disabled:opacity-60";
+    "px-4 py-2.5 min-h-[42px] rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 no-print disabled:cursor-not-allowed disabled:opacity-60";
   const variants = {
     primary:
       "bg-gradient-to-b from-blue-600 to-blue-700 text-white shadow-md shadow-blue-600/20 hover:from-blue-700 hover:to-blue-800 hover:shadow-lg hover:shadow-blue-600/25",

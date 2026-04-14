@@ -151,7 +151,7 @@ export default function QuestionDonutChart({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full">
       <div className="mb-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -159,12 +159,14 @@ export default function QuestionDonutChart({
               Q{questionNumber}. {questionText}
             </h4>
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1 shrink-0">
             <div className="text-2xl font-bold text-blue-600">{avgScore}</div>
             <p className="text-xs text-slate-500 font-semibold">/ 5.0</p>
           </div>
         </div>
       </div>
+
+      <div className="mt-auto">
 
       <ResponsiveContainer width="100%" height={280}>
         <PieChart>
@@ -187,7 +189,7 @@ export default function QuestionDonutChart({
         </PieChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs min-h-[76px] content-start">
         {chartData.map((item) => {
           const percentage =
             totalScore > 0
@@ -209,6 +211,7 @@ export default function QuestionDonutChart({
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

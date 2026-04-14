@@ -21,9 +21,9 @@ export default function CustomSelect({
 
     setDropdownStyle({
       position: "fixed",
-      minWidth: rect.width + "px",
-      maxWidth: "90vw",
-      left: rect.left + "px",
+      minWidth: Math.min(rect.width, window.innerWidth - 24) + "px",
+      maxWidth: "calc(100vw - 24px)",
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - rect.width - 12)) + "px",
       top: isBottomClipped ? "auto" : rect.bottom + 8 + "px",
       bottom: isBottomClipped
         ? window.innerHeight - rect.top + 8 + "px"
@@ -105,7 +105,7 @@ export default function CustomSelect({
         className={`flex w-full items-center justify-between rounded-xl border-2 px-4 py-3 text-sm font-bold transition-all outline-none focus:ring-2 ${currentTheme}`}
       >
         <span
-          className={`truncate whitespace-nowrap text-left flex-1 mr-4 ${!value ? (isDark ? "text-indigo-200/50" : "text-slate-600") : ""}`}
+          className={`truncate text-left flex-1 mr-4 ${!value ? (isDark ? "text-indigo-200/50" : "text-slate-600") : ""}`}
         >
           {selectedLabel || placeholder}
         </span>
@@ -191,7 +191,7 @@ function OptionItem({ option, selectedValue, onSelect, isDark }) {
         isSelected ? selectedClass : hoverClass
       }`}
     >
-      <span className="whitespace-nowrap pr-2">{option.label}</span>
+      <span className="pr-2 break-words">{option.label}</span>
       {isSelected && (
         <Check
           size={16}

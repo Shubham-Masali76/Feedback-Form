@@ -784,7 +784,7 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-4 md:gap-5 mb-6">
                 <div>
                   <label className="section-title mb-2 block">
-                    1st Year (Sem 1 & 2)
+                    1st Year
                   </label>
                   <CustomSelect
                     value={schemeMapping.year1}
@@ -797,7 +797,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className="section-title mb-2 block">
-                    2nd Year (Sem 3 & 4)
+                    2nd Year
                   </label>
                   <CustomSelect
                     value={schemeMapping.year2}
@@ -810,7 +810,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className="section-title mb-2 block">
-                    3rd Year (Sem 5 & 6)
+                    3rd Year
                   </label>
                   <CustomSelect
                     value={schemeMapping.year3}
@@ -936,7 +936,7 @@ export default function AdminDashboard() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex w-full sm:w-auto items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-700 px-8 py-4 text-sm font-black text-white shadow-xl shadow-indigo-200/50 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-60 disabled:scale-100 uppercase tracking-widest min-w-[200px]"
+                  className="inline-flex w-full sm:w-auto items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-700 px-8 py-4 text-sm font-black text-white shadow-xl shadow-indigo-200/50 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-60 disabled:scale-100 uppercase tracking-widest sm:min-w-[200px]"
                 >
                   {isSubmitting ? (
                     "Creating Account..."
@@ -968,7 +968,7 @@ export default function AdminDashboard() {
                 </h3>
               </div>
               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-                <div className="min-w-[240px] relative z-[60]">
+                <div className="w-full md:w-auto md:min-w-[240px] relative z-[60]">
                   <CustomSelect
                     value={filterStaffDept}
                     onChange={(val) => setFilterStaffDept(val)}
@@ -1156,7 +1156,7 @@ export default function AdminDashboard() {
             </div>
             <div className="p-6 md:p-8 flex flex-wrap gap-5 items-end justify-between">
               <div className="flex flex-wrap gap-5 flex-1 w-full xl:w-auto">
-                <div className="flex-1 min-w-[120px]">
+                <div className="flex-1 min-w-0 sm:min-w-[120px]">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Academic Year
                   </label>
@@ -1168,7 +1168,7 @@ export default function AdminDashboard() {
                     placeholder="e.g. 2025-26"
                   />
                 </div>
-                <div className="flex-1 min-w-[120px]">
+                <div className="flex-1 min-w-0 sm:min-w-[120px]">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Semester
                   </label>
@@ -1185,7 +1185,7 @@ export default function AdminDashboard() {
                     placeholder="e.g. VI"
                   />
                 </div>
-                <div className="flex-[1.5] min-w-[200px] relative z-50">
+                <div className="flex-[1.5] min-w-0 sm:min-w-[200px] relative z-50">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Department
                   </label>
@@ -1203,7 +1203,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 {reportDept && (
-                  <div className="flex-[2] min-w-[200px] relative z-40 animate-in fade-in duration-300">
+                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-40 animate-in fade-in duration-300">
                     <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                       Faculty
                     </label>
@@ -1222,7 +1222,7 @@ export default function AdminDashboard() {
                   </div>
                 )}
                 {reportStaff && (
-                  <div className="flex-[2] min-w-[200px] relative z-[35] animate-in fade-in duration-300">
+                  <div className="flex-[2] min-w-0 sm:min-w-[200px] relative z-[35] animate-in fade-in duration-300">
                     <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                       Subject
                     </label>
@@ -1785,30 +1785,24 @@ export default function AdminDashboard() {
 
       {activeTab === "controls" && (
         <Card className="max-w-3xl overflow-hidden p-0 border-amber-200">
-          <div className="border-b border-amber-100 bg-amber-50 px-6 py-4">
-            <h2 className="page-card-title flex items-center gap-3">
-              <Building2 size={20} className="text-amber-600" />
+          <div className="border-b border-amber-100 bg-amber-50 px-6 py-5">
+            <h2 className="flex items-center gap-3 text-xl font-extrabold tracking-tight text-slate-900">
+              <Building2 size={26} className="text-amber-600" />
               Global Institution Controls
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1.5 text-base font-medium text-slate-600">
               Manage global settings for the annual institution-level satisfy
               survey.
             </p>
           </div>
           <div className="p-6 md:p-8 space-y-6">
-            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
-              <h4 className="font-bold text-slate-900">Automation Active</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Academic Year and Semester are now automatically detected based
-                on the calendar and student promotions.
-              </p>
-            </div>
-            <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-200">
+
+            <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
               <div>
-                <h4 className="font-bold text-slate-900">
+                <h4 className="text-lg font-bold text-slate-900">
                   Annual Portal Access
                 </h4>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-medium text-slate-600 mt-0.5">
                   Enable students to fill the satisfaction survey
                 </p>
               </div>
@@ -1818,8 +1812,8 @@ export default function AdminDashboard() {
                 className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${isInstPortalOpen ? "bg-red-500 text-white hover:bg-red-600" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
               >
                 {isInstPortalOpen
-                  ? "Save & Close Portal"
-                  : "Save & Open Portal"}
+                  ? "Close Portal"
+                  : "Open Portal"}
               </button>
             </div>
           </div>

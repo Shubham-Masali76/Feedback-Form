@@ -186,9 +186,9 @@ export default function App() {
 
       {/* 2. MAIN APP LAYER (Rendered underneath splash during transition) */}
       {(!loading || fadeSplash) && (
-        <div className="animate-fade-in-up min-h-screen">
+        <div className="animate-fade-in-up min-h-dvh">
           {!user ? (
-            <div className="login-page-root flex min-h-screen items-start justify-center overflow-y-auto p-3 py-5 sm:items-center sm:p-4 sm:py-6 md:py-8">
+            <div className="login-page-root flex min-h-dvh items-start justify-center overflow-y-auto p-3 pt-[max(1.25rem,env(safe-area-inset-top,0px))] pb-5 sm:items-center sm:p-4 sm:pt-[max(1rem,env(safe-area-inset-top,0px))] sm:py-6 md:py-8">
               <div
                 className="pointer-events-none absolute right-[-10%] top-1/4 h-[min(60vw,28rem)] w-[min(60vw,28rem)] rounded-full bg-indigo-400/25 blur-3xl"
                 aria-hidden
@@ -215,9 +215,9 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="min-h-screen bg-app-shell">
-              <nav className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 px-4 py-3 sm:px-6 backdrop-blur-md shadow-nav flex flex-wrap items-center justify-between gap-3 print:hidden print-hide">
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="min-h-dvh bg-app-shell">
+              <nav className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3 sm:px-6 backdrop-blur-md shadow-nav flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 print:hidden print-hide">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 w-full sm:w-auto">
                   <div
                     className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-xs font-extrabold shadow-md shadow-blue-600/20"
                     aria-hidden
@@ -234,14 +234,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto sm:ml-auto overflow-x-auto pb-1 sm:pb-0">
                   {user?.role === "hod" && (
                     <button
                       type="button"
                       onClick={() =>
                         setViewMode(viewMode === "hod" ? "staff" : "hod")
                       }
-                      className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border transition-all ${
+                      className={`inline-flex items-center gap-2 text-sm font-bold px-3 sm:px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${
                         viewMode === "hod"
                           ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
                           : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
@@ -265,7 +265,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowChangePassword(true)}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-blue-800 px-3 py-2 rounded-xl border border-slate-200 hover:border-blue-300 bg-white shadow-sm hover:shadow transition-all"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-blue-800 px-3 py-2 rounded-xl border border-slate-200 hover:border-blue-300 bg-white shadow-sm hover:shadow transition-all whitespace-nowrap"
                     >
                       <KeyRound size={16} className="shrink-0" aria-hidden />
                       <span className="hidden sm:inline">Password</span>
@@ -287,15 +287,15 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-red-700 px-3 py-2 rounded-xl border border-slate-200 hover:border-red-200 bg-white shadow-sm hover:shadow transition-all"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-red-700 px-3 py-2 rounded-xl border border-slate-200 hover:border-red-200 bg-white shadow-sm hover:shadow transition-all whitespace-nowrap"
                   >
                     <LogOut size={16} className="shrink-0" aria-hidden />
-                    Logout
+                    <span className="hidden sm:inline">Logout</span>
                   </button>
                 </div>
               </nav>
 
-              <main className="p-4 md:p-8 max-w-7xl mx-auto pb-12 print:p-0 print:m-0 print:max-w-none w-full">
+              <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 md:py-8 pb-[max(3rem,env(safe-area-inset-bottom,0px))] print:p-0 print:m-0 print:max-w-none">
                 {user.role === "admin" && <AdminDashboard user={user} />}
                 {user.role === "student" && <StudentDashboard user={user} />}
                 {user.role === "hod" &&
