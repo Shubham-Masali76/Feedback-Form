@@ -176,6 +176,33 @@ export default function AdminDashboard() {
     fetchGlobalData();
   }, [fetchGlobalData]);
 
+  useEffect(() => {
+    if (reportSubject) {
+      const fbMatch = [...globalFeedbacks, ...globalExitForms].find((f) => f.subject === reportSubject && f.semester);
+      if (fbMatch && fbMatch.semester) {
+        let val = fbMatch.semester;
+        if (!val) {
+          setSemester("");
+          return;
+        }
+        const s = String(val).toUpperCase();
+        const match = s.match(/\d/);
+        let roman = val;
+        if (match) {
+          const num = parseInt(match[0]);
+          if (num >= 1 && num <= 6) roman = ["", "I", "II", "III", "IV", "V", "VI"][num];
+        } else if (s.includes("VI")) roman = "VI";
+        else if (s.includes("IV")) roman = "IV";
+        else if (s.includes("V")) roman = "V";
+        else if (s.includes("III")) roman = "III";
+        else if (s.includes("II")) roman = "II";
+        else if (s.includes("I")) roman = "I";
+        
+        setSemester(roman);
+      }
+    }
+  }, [reportSubject, globalFeedbacks, globalExitForms]);
+
   // --- FIREBASE FUNCTIONS (YOUR CODE INTACT) ---
   const handleCreateDepartment = async (e) => {
     e.preventDefault();
@@ -1167,25 +1194,7 @@ export default function AdminDashboard() {
                     placeholder="e.g. 2025-26"
                   />
                 </div>
-                {reportMode !== "institution" && (
-                  <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
-                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
-                      Semester
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={3}
-                      value={semester}
-                      onChange={(e) =>
-                        setSemester(
-                          e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
-                        )
-                      }
-                      className="input-app py-2.5 text-sm font-bold px-4 w-full"
-                      placeholder="e.g. VI"
-                    />
-                  </div>
-                )}
+
                 <div className="w-full sm:w-auto flex-[1.5] min-w-0 sm:min-w-[200px] relative z-50">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-widest block mb-1.5">
                     Department
@@ -1244,10 +1253,6 @@ export default function AdminDashboard() {
                 onClick={() => {
                   if (!acadYear) {
                     notifyError("Academic Year is required before printing.");
-                    return;
-                  }
-                  if (reportMode !== "institution" && !semester) {
-                    notifyError("Semester is required before printing.");
                     return;
                   }
                   window.print();

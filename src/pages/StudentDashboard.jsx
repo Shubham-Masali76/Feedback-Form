@@ -22,6 +22,8 @@ import {
   where,
   doc,
   getDoc,
+  updateDoc,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -78,7 +80,9 @@ export default function StudentDashboard({ user }) {
   };
 
   const getYearNumberFromClassCode = (classCode) => {
-    const code = String(classCode || "").trim().toUpperCase();
+    const code = String(classCode || "")
+      .trim()
+      .toUpperCase();
     if (!code) return 1;
 
     const yearPattern = code.match(/([1-3])Y/);
@@ -165,69 +169,156 @@ export default function StudentDashboard({ user }) {
         });
         setExitForms(fetchedExitForms);
 
-        // Check if student already submitted institution feedback for this year
-        if (instOpen && autoYear) {
-          const instCheckQ = query(
-            collection(db, "InstitutionFeedbackResponses"),
-            where("email", "==", user.email),
-          );
-          const instCheckSnap = await getDocs(instCheckQ);
-          const alreadySubmitted = instCheckSnap.docs.some(
-            (doc) => doc.data().academicYear === autoYear,
-          );
-          if (alreadySubmitted) {
-            setHasSubmittedInst(true);
+        // --- ENHANCED: ROBUST TRACKING USING STUDENT DOC ---
+        let studentTrackedStaff = [];
+        let studentTrackedExit = [];
+        let studentTrackedInst = false;
+        if (user?.id) {
+          try {
+            const studentDocRef = doc(db, "Students", user.id);
+            const studentSnap = await getDoc(studentDocRef);
+            if (studentSnap.exists()) {
+              const sData = studentSnap.data();
+              
+              // Filter tracked submissions by current year and semester
+              const filterCurrent = (list) => {
+                if (!Array.isArray(list)) return [];
+                return list
+                  .filter(item => {
+                    // Format: "allocId_year_sem"
+                    const parts = item.split("_");
+                    if (parts.length >= 3) {
+                      const year = parts[1];
+                      const sem = parts[2];
+                      return year === autoYear && sem === autoSem;
+                    }
+                    return false;
+                  })
+                  .map(item => item.split("_")[0]);
+              };
+
+              studentTrackedStaff = filterCurrent(sData.submittedStaffFeedbacks);
+              studentTrackedExit = filterCurrent(sData.submittedExitSurveys);
+              
+              if (Array.isArray(sData.submittedInstFeedbacks)) {
+                if (sData.submittedInstFeedbacks.includes(autoYear)) {
+                  studentTrackedInst = true;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("Could not fetch student doc for tracking:", err);
           }
         }
 
-        // --- NEW: FETCH PREVIOUS SUBMISSIONS TO ENFORCE SINGLE RESPONSE ---
+        // --- LOCAL STORAGE TRACKING (Ultimate Fallback for Rules Blocks) ---
+        const localStaffKey = `staff_fb_${user?.id}_${autoYear}_${autoSem}`;
+        const localExitKey = `exit_fb_${user?.id}_${autoYear}_${autoSem}`;
+        const localInstKey = `inst_fb_${user?.id}_${autoYear}`;
+        
+        let localTrackedStaff = [];
+        let localTrackedExit = [];
+        let localTrackedInst = false;
+        try {
+          localTrackedStaff = JSON.parse(localStorage.getItem(localStaffKey) || "[]");
+          localTrackedExit = JSON.parse(localStorage.getItem(localExitKey) || "[]");
+          localTrackedInst = localStorage.getItem(localInstKey) === "true";
+        } catch (e) {}
+
+        // Combine DB and Local tracking
+        const mergedStaff = Array.from(new Set([...studentTrackedStaff, ...localTrackedStaff]));
+        const mergedExit = Array.from(new Set([...studentTrackedExit, ...localTrackedExit]));
+        const mergedInst = studentTrackedInst || localTrackedInst;
+
+        // Check if student already submitted institution feedback for this year
+        if (instOpen && autoYear) {
+          try {
+            const instCheckQ = query(
+              collection(db, "InstitutionFeedbackResponses"),
+              where("email", "==", user.email),
+            );
+            const instCheckSnap = await getDocs(instCheckQ);
+            const alreadySubmitted = instCheckSnap.docs.some(
+              (doc) => doc.data().academicYear === autoYear,
+            );
+            if (alreadySubmitted || mergedInst) {
+              setHasSubmittedInst(true);
+            }
+          } catch (e) {
+            console.warn("Fallback query for Institution Feedback failed", e);
+            if (mergedInst) {
+              setHasSubmittedInst(true);
+            }
+          }
+        }
+
+        // --- FALLBACK: FETCH PREVIOUS SUBMISSIONS TO ENFORCE SINGLE RESPONSE ---
 
         // 1. Staff Feedback
-        const staffFeedQ = query(
-          collection(db, "Feedbacks"),
-          where("studentEmail", "==", user.email),
-        );
-        const staffFeedSnap = await getDocs(staffFeedQ);
-        const prevStaffSubmissions = [];
-        staffFeedSnap.forEach((d) => {
-          const data = d.data();
-          if (data.academicYear !== autoYear) return;
-
-          // Find matching allocation ID from the current semester's filtered allocations
-          const match = filteredAllocations.find(
-            (a) =>
-              a.id === data.allocationId ||
-              (a.staff === data.staffName &&
-                a.subject === data.subject &&
-                String(a.targetClass || a.tClass).trim() ===
-                  String(data.targetClass).trim()),
+        try {
+          const staffFeedQ = query(
+            collection(db, "Feedbacks"),
+            where("studentEmail", "==", user.email),
           );
-          if (match) prevStaffSubmissions.push(match.id);
-        });
-        setSubmittedReviews(prevStaffSubmissions);
+          const staffFeedSnap = await getDocs(staffFeedQ);
+          const prevStaffSubmissions = [...mergedStaff];
+          
+          staffFeedSnap.forEach((d) => {
+            const data = d.data();
+            // Strictly check both year and semester
+            if (data.academicYear !== autoYear) return;
+            if (data.semester && data.semester !== autoSem) return;
+
+            // Find matching allocation ID from the current semester's filtered allocations
+            const match = filteredAllocations.find(
+              (a) =>
+                a.id === data.allocationId ||
+                (a.staff === data.staffName &&
+                  a.subject === data.subject &&
+                  String(a.targetClass || a.tClass).trim() ===
+                    String(data.targetClass).trim()),
+            );
+            if (match && !prevStaffSubmissions.includes(match.id)) {
+              prevStaffSubmissions.push(match.id);
+            }
+          });
+          setSubmittedReviews(prevStaffSubmissions);
+        } catch (e) {
+          console.warn("Fallback query for Staff Feedbacks failed", e);
+          setSubmittedReviews(mergedStaff);
+        }
 
         // 2. Course Exit Survey
-        const exitRespTrackerQ = query(
-          collection(db, "CourseExitResponses"),
-          where("studentEmail", "==", user.email),
-        );
-        const exitRespTrackerSnap = await getDocs(exitRespTrackerQ);
-        const prevExitSubmissions = [];
-        exitRespTrackerSnap.forEach((d) => {
-          const data = d.data();
-          if (data.academicYear !== autoYear) return;
-
-          const match = filteredAllocations.find(
-            (a) =>
-              a.id === data.allocationId ||
-              (a.staff === data.staffName &&
-                a.subject === data.subject &&
-                String(a.targetClass || a.tClass).trim() ===
-                  String(data.targetClass).trim()),
+        try {
+          const exitRespTrackerQ = query(
+            collection(db, "CourseExitResponses"),
+            where("studentEmail", "==", user.email),
           );
-          if (match) prevExitSubmissions.push(match.id);
-        });
-        setSubmittedExitSurveys(prevExitSubmissions);
+          const exitRespTrackerSnap = await getDocs(exitRespTrackerQ);
+          const prevExitSubmissions = [...mergedExit];
+          
+          exitRespTrackerSnap.forEach((d) => {
+            const data = d.data();
+            if (data.academicYear !== autoYear) return;
+            if (data.semester && data.semester !== autoSem) return;
+
+            const match = filteredAllocations.find(
+              (a) =>
+                a.id === data.allocationId ||
+                (a.staff === data.staffName &&
+                  a.subject === data.subject &&
+                  String(a.targetClass || a.tClass).trim() ===
+                    String(data.targetClass).trim()),
+            );
+            if (match && !prevExitSubmissions.includes(match.id)) {
+              prevExitSubmissions.push(match.id);
+            }
+          });
+          setSubmittedExitSurveys(prevExitSubmissions);
+        } catch (e) {
+          console.warn("Fallback query for Exit Surveys failed", e);
+          setSubmittedExitSurveys(mergedExit);
+        }
       } catch (error) {
         console.error("Error fetching data: ", error);
       } finally {
@@ -306,10 +397,31 @@ export default function StudentDashboard({ user }) {
         createdAt: new Date(),
       });
 
+      // Update the robust tracking in the student's document
+      if (user?.id) {
+        try {
+          const trackString = `${selectedAllocation}_${currentAcadYear}_${currentSemester}`;
+          await updateDoc(doc(db, "Students", user.id), {
+            submittedStaffFeedbacks: arrayUnion(trackString)
+          });
+        } catch (err) {
+          console.warn("Could not update robust tracking:", err);
+        }
+      }
+
       success(`Feedback for ${targetData.subject} was submitted anonymously.`);
 
       const newSubmittedReviews = [...submittedReviews, selectedAllocation];
       setSubmittedReviews(newSubmittedReviews);
+      
+      // Update LocalStorage Fallback
+      if (user?.id) {
+        try {
+          const localStaffKey = `staff_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
+          localStorage.setItem(localStaffKey, JSON.stringify(newSubmittedReviews));
+        } catch (e) {}
+      }
+
       setSelectedAllocation("");
       setRatings({});
 
@@ -366,8 +478,30 @@ export default function StudentDashboard({ user }) {
         createdAt: new Date(),
       });
 
+      // Update the robust tracking in the student's document
+      if (user?.id) {
+        try {
+          const trackString = `${selectedAllocation}_${currentAcadYear}_${currentSemester}`;
+          await updateDoc(doc(db, "Students", user.id), {
+            submittedExitSurveys: arrayUnion(trackString)
+          });
+        } catch (err) {
+          console.warn("Could not update robust tracking:", err);
+        }
+      }
+
       success(`Course Exit Survey for ${targetData.subject} was submitted.`);
-      setSubmittedExitSurveys([...submittedExitSurveys, selectedAllocation]);
+      const newSubmittedExitSurveys = [...submittedExitSurveys, selectedAllocation];
+      setSubmittedExitSurveys(newSubmittedExitSurveys);
+      
+      // Update LocalStorage Fallback
+      if (user?.id) {
+        try {
+          const localExitKey = `exit_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
+          localStorage.setItem(localExitKey, JSON.stringify(newSubmittedExitSurveys));
+        } catch (e) {}
+      }
+
       setExitRatings({});
 
       // Auto switch back to faculty tab if not completed
@@ -419,10 +553,30 @@ export default function StudentDashboard({ user }) {
         createdAt: new Date(),
       });
 
+      // Update the robust tracking in the student's document (tracks by academicYear only)
+      if (user?.id) {
+        try {
+          await updateDoc(doc(db, "Students", user.id), {
+            submittedInstFeedbacks: arrayUnion(currentAcadYear)
+          });
+        } catch (err) {
+          console.warn("Could not update robust tracking for institution feedback:", err);
+        }
+      }
+
       success(
         `Institution Feedback for ${currentAcadYear} submitted successfully.`,
       );
       setHasSubmittedInst(true);
+      
+      // Update LocalStorage Fallback
+      if (user?.id) {
+        try {
+          const localInstKey = `inst_fb_${user.id}_${currentAcadYear}`;
+          localStorage.setItem(localInstKey, "true");
+        } catch (e) {}
+      }
+
       setInstRatings({});
     } catch (error) {
       console.error("Error submitting institution feedback: ", error);
@@ -534,192 +688,194 @@ export default function StudentDashboard({ user }) {
                 </p>
               </div>
             </div>
-            {hasSubmittedInst ? (
-              <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-bold border border-emerald-100">
-                <CheckCircle size={18} />
-                Submitted
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  if (selectedAllocation === "institution_survey") {
-                    setSelectedAllocation("");
-                  } else {
-                    setSelectedAllocation("institution_survey");
-                    setActiveFormTab("institution");
-                  }
-                }}
-                className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${selectedAllocation === "institution_survey" ? "bg-slate-800 text-white hover:bg-slate-700" : "bg-amber-600 text-white hover:bg-amber-700 hover:shadow-lg"}`}
-              >
-                {selectedAllocation === "institution_survey"
-                  ? "Back to Subjects"
-                  : "Fill Survey now"}
-              </button>
-            )}
+            <button
+              onClick={() => {
+                if (selectedAllocation === "institution_survey") {
+                  setSelectedAllocation("");
+                } else {
+                  setSelectedAllocation("institution_survey");
+                  setActiveFormTab("institution");
+                }
+              }}
+              className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md flex items-center gap-2 ${
+                selectedAllocation === "institution_survey"
+                  ? "bg-slate-800 text-white hover:bg-slate-700"
+                  : hasSubmittedInst
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shadow-none"
+                    : "bg-amber-600 text-white hover:bg-amber-700 hover:shadow-lg"
+              }`}
+            >
+              {selectedAllocation === "institution_survey" ? (
+                "Back to Subjects"
+              ) : hasSubmittedInst ? (
+                <>
+                  <CheckCircle size={18} />
+                  Submitted
+                </>
+              ) : (
+                "Fill Survey now"
+              )}
+            </button>
           </div>
         </Card>
       )}
 
       <div className="grid lg:grid-cols-3 gap-7">
-        <div className={`lg:col-span-1 space-y-4 ${selectedAllocation ? "hidden lg:block" : "block"}`}>
+        <div
+          className={`lg:col-span-1 space-y-4 ${selectedAllocation === "institution_survey" ? "hidden" : selectedAllocation ? "hidden lg:block" : "block"}`}
+        >
           <Card className="overflow-hidden p-0 !shadow-soft-lg ring-1 ring-slate-200/60">
-              <div className="border-b border-slate-200/80 bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-4 text-white">
-                <h2 className="font-display flex items-center gap-2 text-lg font-bold">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
-                    <BookOpen size={18} strokeWidth={2} />
-                  </span>
-                  Your subjects
-                </h2>
-                <p className="mt-1.5 text-xs font-medium text-slate-300">
-                  Tap a subject, then complete the form on the right.
-                </p>
-              </div>
-              <div className="p-5">
-                {allocations.length === 0 ? (
-                  <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-slate-300/90 bg-gradient-to-b from-slate-50 to-white py-12 px-4 text-center">
-                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-200/80 shadow-inner">
-                      <ClipboardList
-                        className="text-slate-500"
-                        strokeWidth={1.5}
-                        size={28}
-                        aria-hidden
-                      />
-                    </div>
-                    <p className="font-display text-base font-bold text-slate-800">
-                      No subjects yet
-                    </p>
-                    <p className="mt-1 max-w-[240px] text-xs leading-relaxed text-slate-600">
-                      Ask your HOD if allocations are set up for your class.
-                    </p>
+            <div className="border-b border-slate-200/80 bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-4 text-white">
+              <h2 className="font-display flex items-center gap-2 text-lg font-bold">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/15">
+                  <BookOpen size={18} strokeWidth={2} />
+                </span>
+                Your subjects
+              </h2>
+              <p className="mt-1.5 text-xs font-medium text-slate-300">
+                Tap a subject, then complete the form on the right.
+              </p>
+            </div>
+            <div className="p-5">
+              {allocations.length === 0 ? (
+                <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-slate-300/90 bg-gradient-to-b from-slate-50 to-white py-12 px-4 text-center">
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-200/80 shadow-inner">
+                    <ClipboardList
+                      className="text-slate-500"
+                      strokeWidth={1.5}
+                      size={28}
+                      aria-hidden
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-6">
-                    {(() => {
-                      const renderButton = (alloc) => {
-                        const isCompleted = submittedReviews.includes(alloc.id);
-                        const hasExitForm = exitForms.some(
-                          (f) =>
-                            f.subject === alloc.subject &&
-                            String(f.targetClass || "").trim() ===
-                              String(
-                                alloc.targetClass ?? alloc.tClass ?? "",
-                              ).trim() &&
-                            f.staffName === alloc.staff,
-                        );
-                        const isExitCompleted = submittedExitSurveys.includes(
-                          alloc.id,
-                        );
-
-                        return (
-                          <button
-                            type="button"
-                            key={alloc.id}
-                            onClick={() => {
-                              if (!isCompleted || !isExitCompleted) {
-                                setSelectedAllocation(alloc.id);
-                                setActiveFormTab("faculty");
-                                setRatings({});
-                                setExitRatings({});
-                              }
-                            }}
-                            disabled={
-                              isCompleted && (!hasExitForm || isExitCompleted)
-                            }
-                            className={`w-full text-left rounded-2xl border-2 p-4 transition-all duration-200 ${
-                              isCompleted && (!hasExitForm || isExitCompleted)
-                                ? "cursor-not-allowed border-slate-200/80 bg-slate-50/90 opacity-75"
-                                : selectedAllocation === alloc.id
-                                  ? "border-transparent bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-500/40"
-                                  : "border-slate-200/90 bg-white hover:border-blue-300 hover:shadow-md"
-                            }`}
-                          >
-                            <div className="flex justify-between items-center gap-2 mb-2">
-                              <span
-                                className={`text-[10px] font-bold uppercase tracking-wider ${
-                                  isCompleted &&
-                                  (!hasExitForm || isExitCompleted)
-                                    ? "text-slate-400"
-                                    : selectedAllocation === alloc.id
-                                      ? "text-blue-100/90"
-                                      : "text-slate-500"
-                                }`}
-                              >
-                                {alloc.targetClass ?? alloc.tClass ?? "—"}
-                              </span>
-                              <div className="flex gap-1.5 items-center">
-                                {hasExitForm && (
-                                  <span
-                                    className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${isExitCompleted ? "bg-slate-200 text-slate-500" : selectedAllocation === alloc.id ? "bg-blue-800/40 text-blue-100" : "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"}`}
-                                  >
-                                    Survey Open
-                                  </span>
-                                )}
-                                {isCompleted && (
-                                  <CheckCircle
-                                    size={18}
-                                    className={`${selectedAllocation === alloc.id ? "text-blue-300" : "text-emerald-500"} shrink-0`}
-                                    aria-label="Submitted"
-                                  />
-                                )}
-                              </div>
-                            </div>
-                            <h3
-                              className={`font-display text-base font-bold leading-tight ${
-                                selectedAllocation === alloc.id &&
-                                !(
-                                  isCompleted &&
-                                  (!hasExitForm || isExitCompleted)
-                                )
-                                  ? "text-white"
-                                  : "text-slate-900"
-                              } ${isCompleted && (!hasExitForm || isExitCompleted) ? "text-slate-600" : ""}`}
-                            >
-                              {alloc.subject}
-                            </h3>
-                            <p
-                              className={`text-xs font-medium mt-1.5 ${
-                                selectedAllocation === alloc.id &&
-                                !(
-                                  isCompleted &&
-                                  (!hasExitForm || isExitCompleted)
-                                )
-                                  ? "text-blue-100/95"
-                                  : "text-slate-500"
-                              } ${isCompleted && (!hasExitForm || isExitCompleted) ? "text-slate-400" : ""}`}
-                            >
-                              {alloc.staff}
-                            </p>
-                          </button>
-                        );
-                      };
+                  <p className="font-display text-base font-bold text-slate-800">
+                    No subjects yet
+                  </p>
+                  <p className="mt-1 max-w-[240px] text-xs leading-relaxed text-slate-600">
+                    Ask your HOD if allocations are set up for your class.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {(() => {
+                    const renderButton = (alloc) => {
+                      const isCompleted = submittedReviews.includes(alloc.id);
+                      const hasExitForm = exitForms.some(
+                        (f) =>
+                          f.subject === alloc.subject &&
+                          String(f.targetClass || "").trim() ===
+                            String(
+                              alloc.targetClass ?? alloc.tClass ?? "",
+                            ).trim() &&
+                          f.staffName === alloc.staff,
+                      );
+                      const isExitCompleted = submittedExitSurveys.includes(
+                        alloc.id,
+                      );
 
                       return (
-                        <>
-                          {mandatoryAllocations.length > 0 && (
-                            <div className="space-y-3">
-                              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                                Core subjects
-                              </p>
-                              {mandatoryAllocations.map(renderButton)}
+                        <button
+                          type="button"
+                          key={alloc.id}
+                          onClick={() => {
+                            setSelectedAllocation(alloc.id);
+                            if (isCompleted && hasExitForm && !isExitCompleted) {
+                              setActiveFormTab("exit");
+                            } else {
+                              setActiveFormTab("faculty");
+                            }
+                            setRatings({});
+                            setExitRatings({});
+                          }}
+                          className={`w-full text-left rounded-2xl border-2 p-4 transition-all duration-200 ${
+                            selectedAllocation === alloc.id
+                              ? "border-transparent bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-500/40"
+                              : isCompleted && (!hasExitForm || isExitCompleted)
+                                ? "border-slate-200/80 bg-slate-50/90 hover:border-slate-300"
+                                : "border-slate-200/90 bg-white hover:border-blue-300 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center gap-2 mb-2">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider ${
+                                selectedAllocation === alloc.id
+                                  ? "text-blue-100/90"
+                                  : isCompleted && (!hasExitForm || isExitCompleted)
+                                    ? "text-slate-400"
+                                    : "text-slate-500"
+                              }`}
+                            >
+                              {alloc.targetClass ?? alloc.tClass ?? "—"}
+                            </span>
+                            <div className="flex gap-1.5 items-center">
+                              {hasExitForm && (
+                                <span
+                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${isExitCompleted ? "bg-slate-200 text-slate-500" : selectedAllocation === alloc.id ? "bg-blue-800/40 text-blue-100" : "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"}`}
+                                >
+                                  Survey Open
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <CheckCircle
+                                  size={18}
+                                  className={`${selectedAllocation === alloc.id ? "text-blue-300" : "text-emerald-500"} shrink-0`}
+                                  aria-label="Submitted"
+                                />
+                              )}
                             </div>
-                          )}
-
-                          {electiveAllocations.length > 0 && (
-                            <div className="space-y-3 pt-5 border-t border-slate-200/80">
-                              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                                Elective
-                              </p>
-                              {electiveAllocations.map(renderButton)}
-                            </div>
-                          )}
-                        </>
+                          </div>
+                          <h3
+                            className={`font-display text-base font-bold leading-tight ${
+                              selectedAllocation === alloc.id
+                                ? "text-white"
+                                : isCompleted && (!hasExitForm || isExitCompleted)
+                                  ? "text-slate-600"
+                                  : "text-slate-900"
+                            }`}
+                          >
+                            {alloc.subject}
+                          </h3>
+                          <p
+                            className={`text-xs font-medium mt-1.5 ${
+                              selectedAllocation === alloc.id
+                                ? "text-blue-100/95"
+                                : isCompleted && (!hasExitForm || isExitCompleted)
+                                  ? "text-slate-400"
+                                  : "text-slate-500"
+                            }`}
+                          >
+                            {alloc.staff}
+                          </p>
+                        </button>
                       );
-                    })()}
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
+                    };
+
+                    return (
+                      <>
+                        {mandatoryAllocations.length > 0 && (
+                          <div className="space-y-3">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                              Core subjects
+                            </p>
+                            {mandatoryAllocations.map(renderButton)}
+                          </div>
+                        )}
+
+                        {electiveAllocations.length > 0 && (
+                          <div className="space-y-3 pt-5 border-t border-slate-200/80">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                              Elective
+                            </p>
+                            {electiveAllocations.map(renderButton)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
 
         <div
           className={

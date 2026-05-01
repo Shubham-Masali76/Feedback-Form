@@ -52,6 +52,8 @@ export default function Login({
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (!email.trim()) return warning("Please enter your email address.");
+    if (!password) return warning("Please enter your password.");
     setLoading(true);
 
     try {

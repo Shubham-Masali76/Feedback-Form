@@ -69,6 +69,7 @@ export default function HodDashboard({ user }) {
   // -- Data States --
   const [subjectList, setSubjectList] = useState([]);
   const [students, setStudents] = useState([]);
+  const [studentsLoaded, setStudentsLoaded] = useState(false);
   const [feedbacks, setFeedbacks] = useState([]); // NEW: Store Feedbacks
   const [allocations, setAllocations] = useState([]); // NEW: Store Allocations
   const [isPortalOpen, setIsPortalOpen] = useState(false);
@@ -76,7 +77,7 @@ export default function HodDashboard({ user }) {
 
   // -- Form States --
   const [excelClass, setExcelClass] = useState("");
-  const [excelDiv, setExcelDiv] = useState("A");
+  const [excelDiv, setExcelDiv] = useState("");
 
   const [editingSubjectId, setEditingSubjectId] = useState(null);
   const [editSubjectForm, setEditSubjectForm] = useState({
@@ -149,22 +150,55 @@ export default function HodDashboard({ user }) {
   });
 
   // -- Student Lifecycle States --
-  const [promoteSource, setPromoteSource] = useState("");
-  const [promoteTarget, setPromoteTarget] = useState("");
   const [resetClassTarget, setResetClassTarget] = useState("");
-  const [showPromoteModal, setShowPromoteModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [allotmentToDelete, setAllotmentToDelete] = useState(null); // { id, staff, subject }
-  const [promoteCandidates, setPromoteCandidates] = useState([]);
-  const [deleteCandidates, setDeleteCandidates] = useState([]);
+  const [editingAllotmentId, setEditingAllotmentId] = useState(null);
   const [resetCandidates, setResetCandidates] = useState([]);
-  const [excludedFromPromotion, setExcludedFromPromotion] = useState(new Set());
-  const [excludedFromDeletion, setExcludedFromDeletion] = useState(new Set());
   const [excludedFromReset, setExcludedFromReset] = useState(new Set());
+  const lifecycleStorageKey = `hod:lifecycleProgress:${user.dept || "unknown"}`;
+  const [workflowProgress, setWorkflowProgress] = useState(() => {
+    try {
+      const raw = localStorage.getItem(lifecycleStorageKey);
+      if (!raw) return { cleanup3Done: false, promote23Done: false };
+      const parsed = JSON.parse(raw);
+      return {
+        cleanup3Done: parsed?.cleanup3Done === true,
+        promote23Done: parsed?.promote23Done === true,
+      };
+    } catch {
+      return { cleanup3Done: false, promote23Done: false };
+    }
+  });
+  const [detainedRollInput, setDetainedRollInput] = useState("");
+  const [detainedInputErrors, setDetainedInputErrors] = useState({
+    invalid: [],
+    notFound: [],
+  });
+  const [detainedInputModal, setDetainedInputModal] = useState({
+    open: false,
+    action: "", // cleanup3 | promote23 | promote12
+    title: "",
+    message: "",
+    sourceClass: "",
+    targetClass: "",
+    candidates: [],
+  });
+  const [detainedConfirmModal, setDetainedConfirmModal] = useState({
+    open: false,
+    action: "",
+    title: "",
+    candidates: [],
+    detainedStudents: [],
+    processableStudents: [],
+    sourceClass: "",
+    targetClass: "",
+    duplicateCount: 0,
+  });
 
   const fetchData = useCallback(async () => {
     try {
+      setStudentsLoaded(false);
       const allDeptsQ = query(collection(db, "Departments"));
       const allDeptsSnap = await getDocs(allDeptsQ);
       const deptsData = allDeptsSnap.docs.map((d) => d.data());
@@ -205,6 +239,7 @@ export default function HodDashboard({ user }) {
       
       // Filter in memory for the directory tab
       setStudents(allFetchedStudents.filter(s => s.department === user.dept));
+      setStudentsLoaded(true);
 
       // Fetch Feedbacks for Monitor & Reports
       const feedQ = query(
@@ -321,6 +356,7 @@ export default function HodDashboard({ user }) {
       ]);
     } catch (err) {
       console.error(err);
+      setStudentsLoaded(true);
     }
   }, [user.dept]);
 
@@ -329,6 +365,37 @@ export default function HodDashboard({ user }) {
       void fetchData();
     });
   }, [fetchData]);
+
+  useEffect(() => {
+    if (reportSubject) {
+      const formatRoman = (val) => {
+        if (!val) return "";
+        const s = String(val).toUpperCase();
+        const match = s.match(/\d/);
+        if (match) {
+          const num = parseInt(match[0]);
+          if (num >= 1 && num <= 6) return ["", "I", "II", "III", "IV", "V", "VI"][num];
+        }
+        if (s.includes("VI")) return "VI";
+        if (s.includes("IV")) return "IV";
+        if (s.includes("V")) return "V";
+        if (s.includes("III")) return "III";
+        if (s.includes("II")) return "II";
+        if (s.includes("I")) return "I";
+        return val;
+      };
+
+      const fbMatch = feedbacks.find((f) => f.subject === reportSubject && f.semester);
+      if (fbMatch && fbMatch.semester) {
+        setSemester(formatRoman(fbMatch.semester));
+        return;
+      }
+      const allocMatch = allocations.find((a) => a.subject === reportSubject && a.semester);
+      if (allocMatch && allocMatch.semester) {
+        setSemester(formatRoman(allocMatch.semester));
+      }
+    }
+  }, [reportSubject, feedbacks, allocations]);
 
   // Dynamic Options replaced static MSBTE_CLASS_OPTIONS
 
@@ -356,7 +423,7 @@ export default function HodDashboard({ user }) {
         rollNo: rollNorm,
         enrollmentNo: stdForm.enroll.trim(),
         email: emailTrim,
-        division: stdForm.div,
+        division: stdForm.div || "A",
         targetClass: stdForm.tClass,
         department: user.dept,
         status: "pending",
@@ -449,7 +516,7 @@ export default function HodDashboard({ user }) {
             rollNo,
             enrollmentNo: String(r[enrollCol] || "").trim(),
             email: emailStr,
-            division: excelDiv,
+            division: excelDiv || "A",
             targetClass: excelClass,
             status: "pending",
             isClaimed: false,
@@ -616,7 +683,7 @@ export default function HodDashboard({ user }) {
         return;
       }
       const isElective = selectedSubjectData?.isElective || false;
-      await addDoc(collection(db, "Allocations"), {
+      const payload = {
         staff: allotForm.staff,
         subject: allotForm.subject,
         tClass: allotForm.tClass,
@@ -625,14 +692,53 @@ export default function HodDashboard({ user }) {
         department: allotForm.staffDept || user.dept,
         semester: selectedSubjectData?.semester || "",
         isElective: isElective,
-        createdAt: new Date(),
+      };
+
+      if (editingAllotmentId) {
+        await updateDoc(doc(db, "Allocations", editingAllotmentId), payload);
+        setEditingAllotmentId(null);
+        success("Allotment updated.");
+      } else {
+        await addDoc(collection(db, "Allocations"), {
+          ...payload,
+          createdAt: new Date(),
+        });
+        success("Academic allotment confirmed.");
+      }
+
+      setAllotForm({
+        staffDept: user.dept,
+        staff: "",
+        subject: "",
+        tClass: "",
+        division: "",
       });
-      setAllotForm({ ...allotForm, staff: "", subject: "" });
-      success("Academic allotment confirmed.");
       fetchData();
     } catch {
-      notifyError("Failed to allot faculty.");
+      notifyError(editingAllotmentId ? "Failed to update allotment." : "Failed to allot faculty.");
     }
+  };
+
+  const handleEditAllotment = (alloc) => {
+    setEditingAllotmentId(alloc.id);
+    setAllotForm({
+      staffDept: alloc.department || user.dept,
+      staff: alloc.staff || "",
+      subject: alloc.subject || "",
+      tClass: alloc.targetClass || alloc.tClass || "",
+      division: alloc.division || "",
+    });
+  };
+
+  const handleCancelEditAllotment = () => {
+    setEditingAllotmentId(null);
+    setAllotForm({
+      staffDept: user.dept,
+      staff: "",
+      subject: "",
+      tClass: "",
+      division: "",
+    });
   };
 
   const handleDeleteAllocation = async () => {
@@ -752,6 +858,8 @@ export default function HodDashboard({ user }) {
 
   const filteredStudents = useMemo(() => {
     if (!searchRollNo && !filterClass && !filterDivision) return [];
+    // Keep directory queries scoped: if a class is selected, division must also be selected.
+    if (filterClass && !filterDivision) return [];
     return students.filter((s) => {
       const matchSearch =
         !searchRollNo ||
@@ -760,7 +868,13 @@ export default function HodDashboard({ user }) {
         s.prn?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
         s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase());
       const matchClass = !filterClass || s.targetClass === filterClass;
-      const matchDiv = !filterDivision || s.division === filterDivision;
+      const normalizedStudentDiv = String(s.division || "A")
+        .trim()
+        .toUpperCase();
+      const normalizedFilterDiv = String(filterDivision || "")
+        .trim()
+        .toUpperCase();
+      const matchDiv = !normalizedFilterDiv || normalizedStudentDiv === normalizedFilterDiv;
       return matchSearch && matchClass && matchDiv;
     });
   }, [students, searchRollNo, filterClass, filterDivision]);
@@ -840,22 +954,220 @@ export default function HodDashboard({ user }) {
   ];
 
   // --- STUDENT LIFECYCLE HANDLERS ---
-  const handleBulkPromote = async () => {
-    if (!promoteSource || !promoteTarget) {
+  const openDetainedInputModal = ({
+    action,
+    title,
+    message,
+    sourceClass = "",
+    targetClass = "",
+    candidates = [],
+  }) => {
+    setDetainedRollInput("");
+    setDetainedInputErrors({ invalid: [], notFound: [] });
+    setDetainedInputModal({
+      open: true,
+      action,
+      title,
+      message,
+      sourceClass,
+      targetClass,
+      candidates,
+    });
+  };
+
+  const closeDetainedFlow = () => {
+    setDetainedInputModal({
+      open: false,
+      action: "",
+      title: "",
+      message: "",
+      sourceClass: "",
+      targetClass: "",
+      candidates: [],
+    });
+    setDetainedConfirmModal({
+      open: false,
+      action: "",
+      title: "",
+      candidates: [],
+      detainedStudents: [],
+      processableStudents: [],
+      sourceClass: "",
+      targetClass: "",
+      duplicateCount: 0,
+    });
+    setDetainedRollInput("");
+    setDetainedInputErrors({ invalid: [], notFound: [] });
+  };
+
+  const proceedWithDetainedRolls = () => {
+    const tokensRaw = String(detainedRollInput || "")
+      .split(/[\s,]+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    const normalizedTokens = tokensRaw.map((r) => normalizeRollDigits(r));
+    const uniqueRolls = [...new Set(normalizedTokens)];
+    const duplicateCount = Math.max(0, normalizedTokens.length - uniqueRolls.length);
+
+    const invalid = uniqueRolls.filter((r) => !isValidRollNumber(r));
+    const candidateByRoll = new Map(
+      detainedInputModal.candidates.map((s) => [
+        normalizeRollDigits(String(s.rollNo || "")),
+        s,
+      ]),
+    );
+    const notFound = uniqueRolls.filter(
+      (r) => isValidRollNumber(r) && !candidateByRoll.has(r),
+    );
+
+    if (invalid.length || notFound.length) {
+      setDetainedInputErrors({ invalid, notFound });
+      return;
+    }
+
+    const detainedStudents = uniqueRolls
+      .map((r) => candidateByRoll.get(r))
+      .filter(Boolean);
+    const detainedIds = new Set(detainedStudents.map((s) => s.id));
+    const processableStudents = detainedInputModal.candidates.filter(
+      (s) => !detainedIds.has(s.id),
+    );
+
+    setDetainedInputErrors({ invalid: [], notFound: [] });
+    setDetainedInputModal((prev) => ({ ...prev, open: false }));
+    setDetainedConfirmModal({
+      open: true,
+      action: detainedInputModal.action,
+      title:
+        detainedInputModal.action === "cleanup3"
+          ? "Confirm 3rd Year Cleanup"
+          : detainedInputModal.action === "promote23"
+            ? "Confirm Promotion (2nd -> 3rd)"
+            : "Confirm Promotion (1st -> 2nd)",
+      candidates: detainedInputModal.candidates,
+      detainedStudents,
+      processableStudents,
+      sourceClass: detainedInputModal.sourceClass,
+      targetClass: detainedInputModal.targetClass,
+      duplicateCount,
+    });
+  };
+
+  const executeDetainedAction = async () => {
+    const {
+      action,
+      processableStudents,
+      detainedStudents,
+      targetClass,
+      sourceClass,
+    } = detainedConfirmModal;
+
+    if (action !== "cleanup3" && action !== "promote23" && action !== "promote12") {
+      warning("Invalid lifecycle action.");
+      return;
+    }
+
+    if (processableStudents.length === 0) {
+      warning(
+        action === "cleanup3"
+          ? "No students selected for cleanup."
+          : "No students selected for promotion.",
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+
+      if (action === "cleanup3") {
+        processableStudents.forEach((std) => {
+          batch.delete(doc(db, "Students", std.id));
+        });
+        await batch.commit();
+        success(
+          `Cleared ${processableStudents.length} student(s). ${detainedStudents.length} detained student(s) remained in 3rd year.`,
+        );
+        setWorkflowProgress({
+          cleanup3Done: true,
+          promote23Done: false,
+        });
+      } else {
+        processableStudents.forEach((std) => {
+          const docRef = doc(db, "Students", std.id);
+          const targetYearNum = getYearFromClassCode(targetClass);
+
+          let newRollNo = std.rollNo;
+          if (newRollNo) {
+            const rollStr = String(newRollNo);
+            if (targetYearNum === 2 && rollStr.startsWith("1")) {
+              newRollNo = "2" + rollStr.substring(1);
+            } else if (targetYearNum === 3 && rollStr.startsWith("2")) {
+              newRollNo = "3" + rollStr.substring(1);
+            }
+          }
+
+          batch.update(docRef, {
+            targetClass,
+            rollNo: newRollNo,
+            status: "pending",
+          });
+        });
+        await batch.commit();
+
+        success(
+          `Promoted ${processableStudents.length} student(s) from ${sourceClass} to ${targetClass}. ${detainedStudents.length} detained student(s) stayed back.`,
+        );
+
+        if (action === "promote23") {
+          setWorkflowProgress((prev) => ({
+            ...prev,
+            promote23Done: true,
+          }));
+        }
+        if (action === "promote12") {
+          setWorkflowProgress({
+            cleanup3Done: false,
+            promote23Done: false,
+          });
+        }
+      }
+
+      closeDetainedFlow();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      notifyError(
+        action === "cleanup3"
+          ? "3rd year cleanup failed."
+          : "Promotion failed. Please try again.",
+      );
+    }
+    setIsSubmitting(false);
+  };
+
+  const getPrimaryClassCodeForYear = (yearNum) => {
+    const allOptions = dynamicClassOptions.flatMap((g) => g.options || []);
+    const matched = allOptions.find(
+      (opt) => getYearFromClassCode(opt.value) === yearNum,
+    );
+    return matched?.value || "";
+  };
+
+  const processBulkPromote = async (sourceClass, targetClass) => {
+    if (!sourceClass || !targetClass) {
       warning("Please select both source and target classes.");
       return;
     }
-    if (promoteSource === promoteTarget) {
+    if (sourceClass === targetClass) {
       warning("Source and target classes cannot be the same.");
       return;
     }
 
     // Restrict promotion to strictly consecutive years
-    const yearMatchSource = promoteSource.match(/\d/);
-    const sourceYear = yearMatchSource ? parseInt(yearMatchSource[0]) : null;
-
-    const yearMatchTarget = promoteTarget.match(/\d/);
-    const targetYearNum = yearMatchTarget ? parseInt(yearMatchTarget[0]) : null;
+    const sourceYear = getYearFromClassCode(sourceClass);
+    const targetYearNum = getYearFromClassCode(targetClass);
 
     if (sourceYear !== null && targetYearNum !== null) {
       if (targetYearNum !== sourceYear + 1) {
@@ -864,64 +1176,60 @@ export default function HodDashboard({ user }) {
       }
     }
 
+    if (
+      sourceYear === 2 &&
+      targetYearNum === 3 &&
+      thirdYearStudentsCount > 0 &&
+      !workflowProgress.cleanup3Done
+    ) {
+      warning("Step 2 is locked. Complete Step 1 (Clear Outgoing 3rd Year) first.");
+      return;
+    }
+
+    if (sourceYear === 1 && targetYearNum === 2 && !workflowProgress.promote23Done) {
+      warning("Step 3 is locked. Complete Step 2 (Promote 2nd to 3rd) first.");
+      return;
+    }
+
     const studentsToPromote = students.filter(
-      (s) => s.targetClass === promoteSource,
+      (s) => s.targetClass === sourceClass,
     );
     if (studentsToPromote.length === 0) {
-      warning(`No students found in ${promoteSource}.`);
+      if (sourceYear === 2 && targetYearNum === 3) {
+        setWorkflowProgress((prev) => ({
+          ...prev,
+          promote23Done: true,
+        }));
+        return;
+      }
+      warning(`No students found in ${sourceClass}.`);
       return;
     }
 
-    setPromoteCandidates(studentsToPromote);
-    setExcludedFromPromotion(new Set());
-    setShowPromoteModal(true);
+    openDetainedInputModal({
+      action: sourceYear === 2 ? "promote23" : "promote12",
+      title:
+        sourceYear === 2
+          ? "Step 2: Promote 2nd Year to 3rd Year"
+          : "Step 3: Promote 1st Year to 2nd Year",
+      message:
+        "Enter detained student roll numbers separated by commas or spaces. These students will stay in the current year.",
+      sourceClass,
+      targetClass,
+      candidates: studentsToPromote,
+    });
   };
 
-  const executeBulkPromote = async () => {
-    const finalCandidates = promoteCandidates.filter((std) => !excludedFromPromotion.has(std.id));
-    
-    if (finalCandidates.length === 0) {
-      warning("No students selected for promotion.");
-      return;
-    }
+  const handleStep23Promotion = async () => {
+    const sourceClass = getPrimaryClassCodeForYear(2);
+    const targetClass = getPrimaryClassCodeForYear(3);
+    await processBulkPromote(sourceClass, targetClass);
+  };
 
-    setIsSubmitting(true);
-    setShowPromoteModal(false);
-    try {
-      const batch = writeBatch(db);
-      finalCandidates.forEach((std) => {
-        const docRef = doc(db, "Students", std.id);
-        const yearMatch = promoteTarget.match(/\d/);
-        const targetYearNum = yearMatch ? yearMatch[0] : null;
-
-        let newRollNo = std.rollNo;
-        if (newRollNo) {
-          const rollStr = String(newRollNo);
-          if (targetYearNum === "2" && rollStr.startsWith("1")) {
-            newRollNo = "2" + rollStr.substring(1);
-          } else if (targetYearNum === "3" && rollStr.startsWith("2")) {
-            newRollNo = "3" + rollStr.substring(1);
-          }
-        }
-
-        batch.update(docRef, {
-          targetClass: promoteTarget,
-          rollNo: newRollNo,
-          status: "pending", // Reset status for the new semester
-        });
-      });
-      await batch.commit();
-      success(
-        `Successfully promoted ${finalCandidates.length} students to ${promoteTarget}.`,
-      );
-      setPromoteSource("");
-      setPromoteTarget("");
-      fetchData();
-    } catch (err) {
-      console.error(err);
-      notifyError("Promotion failed. Please try again.");
-    }
-    setIsSubmitting(false);
+  const handleStep12Promotion = async () => {
+    const sourceClass = getPrimaryClassCodeForYear(1);
+    const targetClass = getPrimaryClassCodeForYear(2);
+    await processBulkPromote(sourceClass, targetClass);
   };
 
   const handleBulkDeleteStudents = async () => {
@@ -936,45 +1244,22 @@ export default function HodDashboard({ user }) {
       (s) => s.targetClass === target,
     );
     if (studentsToDelete.length === 0) {
-      warning(`No students found in ${target} to clear.`);
+      setWorkflowProgress((prev) => ({
+        ...prev,
+        cleanup3Done: true,
+      }));
       return;
     }
 
-    setDeleteCandidates(studentsToDelete);
-    setExcludedFromDeletion(new Set());
-    setShowDeleteModal(true);
-  };
-
-  const executeBulkDelete = async () => {
-    const finalDeleteList = deleteCandidates.filter(
-      (s) => !excludedFromDeletion.has(s.id),
-    );
-
-    if (finalDeleteList.length === 0) {
-      warning("No students selected for deletion.");
-      return;
-    }
-
-    const confirmMsg = `PERMANENTLY DELETE ${finalDeleteList.length} students? This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
-
-    setIsSubmitting(true);
-    try {
-      const batch = writeBatch(db);
-      finalDeleteList.forEach((std) => {
-        batch.delete(doc(db, "Students", std.id));
-      });
-      await batch.commit();
-      success(
-        `Deleted ${finalDeleteList.length} graduated students.`,
-      );
-      setShowDeleteModal(false);
-      fetchData();
-    } catch (err) {
-      console.error(err);
-      notifyError("Deletion failed.");
-    }
-    setIsSubmitting(false);
+    openDetainedInputModal({
+      action: "cleanup3",
+      title: "Step 1: Graduation Cleanup (3rd Year)",
+      message:
+        "Enter detained student roll numbers separated by commas or spaces. These students will NOT be cleared and will stay in 3rd year.",
+      sourceClass: target,
+      targetClass: "",
+      candidates: studentsToDelete,
+    });
   };
 
   const getYearFromClassCode = (classCode) => {
@@ -1026,6 +1311,64 @@ export default function HodDashboard({ user }) {
       })),
     [dynamicClassOptions],
   );
+
+  const thirdYearStudentsCount = useMemo(
+    () => students.filter((s) => getYearFromClassCode(s.targetClass) === 3).length,
+    [students],
+  );
+  const secondYearStudentsCount = useMemo(
+    () => students.filter((s) => getYearFromClassCode(s.targetClass) === 2).length,
+    [students],
+  );
+  const cleanupLockMessage = workflowProgress.promote23Done
+    ? "Step 1 locked: already completed for current cycle."
+    : "";
+  const step1Locked = isSubmitting || !!cleanupLockMessage;
+  const step2Locked =
+    isSubmitting ||
+    (thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done);
+  const step3Locked = isSubmitting || !workflowProgress.promote23Done;
+  const activeLifecycleStep =
+    thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done
+      ? 1
+      : !workflowProgress.promote23Done
+        ? 2
+        : 3;
+
+  useEffect(() => {
+    if (activeTab !== "lifecycle") return;
+    if (!studentsLoaded) return;
+
+    // Auto-skip Step 1 if there are no 3rd year students.
+    if (thirdYearStudentsCount === 0 && !workflowProgress.cleanup3Done) {
+      setWorkflowProgress((prev) => ({ ...prev, cleanup3Done: true }));
+      return;
+    }
+
+    // Auto-skip Step 2 if there are no 2nd year students.
+    if (
+      workflowProgress.cleanup3Done &&
+      secondYearStudentsCount === 0 &&
+      !workflowProgress.promote23Done
+    ) {
+      setWorkflowProgress((prev) => ({ ...prev, promote23Done: true }));
+    }
+  }, [
+    activeTab,
+    studentsLoaded,
+    thirdYearStudentsCount,
+    secondYearStudentsCount,
+    workflowProgress.cleanup3Done,
+    workflowProgress.promote23Done,
+  ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(lifecycleStorageKey, JSON.stringify(workflowProgress));
+    } catch {
+      // ignore storage failures
+    }
+  }, [lifecycleStorageKey, workflowProgress]);
 
   const handleBulkResetStatus = async () => {
     if (!resetClassTarget) {
@@ -1237,7 +1580,7 @@ export default function HodDashboard({ user }) {
                         { value: "A", label: "Div A" },
                         { value: "B", label: "Div B" },
                       ]}
-                      placeholder="Division"
+                    placeholder="Select Division"
                     />
                   </div>
                   <label className="flex w-full md:w-auto md:flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all md:min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
@@ -1362,7 +1705,7 @@ export default function HodDashboard({ user }) {
                       { value: "A", label: "A" },
                       { value: "B", label: "B" },
                     ]}
-                    placeholder="Div A"
+                    placeholder="Select Division"
                   />
                 </div>
                 <div className="md:col-span-12 lg:col-span-12 xl:col-span-2 flex justify-end">
@@ -1399,70 +1742,180 @@ export default function HodDashboard({ user }) {
                 </div>
 
                 <div className="space-y-8">
-                  {/* Batch Promotion */}
-                  <div className="p-6 bg-white/60 rounded-3xl border border-orange-100 backdrop-blur-sm space-y-5">
-                    <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
-                      <ArrowUpCircle size={16} /> Smart Promotion (FY → SY → TY)
-                    </h4>
-                    <div className="flex items-start gap-3 bg-orange-50/50 p-3 rounded-xl border border-orange-100/50">
-                      <AlertCircle size={16} className="text-orange-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-orange-700 font-bold leading-relaxed uppercase tracking-tight">
-                        Workflow Order: 1. Clear 3rd Year students first. 2. Promote 2nd Year to 3rd Year. 3. Finally Promote 1st Year to 2nd Year. 
-                        This prevents different batches from mixing in the same year.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <span className="text-xs font-black text-slate-500 ml-1 uppercase tracking-wider">
-                          SOURCE YEAR
-                        </span>
-                        <CustomSelect
-                          value={promoteSource}
-                          onChange={(val) => setPromoteSource(val)}
-                          options={dynamicClassOptions}
-                          placeholder="Current Year"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <span className="text-xs font-black text-slate-500 ml-1 uppercase tracking-wider">
-                          TARGET YEAR
-                        </span>
-                        <CustomSelect
-                          value={promoteTarget}
-                          onChange={(val) => setPromoteTarget(val)}
-                          options={dynamicClassOptions}
-                          placeholder="Promote to..."
-                        />
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleBulkPromote}
-                      disabled={
-                        isSubmitting || !promoteSource || !promoteTarget
-                      }
-                      className="group relative w-full flex h-14 items-center justify-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600 to-red-600 px-6 py-3 text-base font-black text-white shadow-[0_10px_25px_-8px_rgba(234,88,12,0.5)] transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_15px_30px_-8px_rgba(234,88,12,0.6)] active:scale-95 disabled:pointer-events-none disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
-                    >
-                      <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-0"></div>
-                      <span className="relative z-10 flex items-center gap-3 tracking-widest uppercase">
-                        {isSubmitting ? (
-                          <>
-                            <RefreshCw size={20} className="animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            Promote Batch to Next Year
-                            <ArrowUpCircle size={20} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
-                          </>
-                        )}
-                      </span>
-                    </button>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                      What this does
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                      This tool runs the annual cycle safely: it clears the outgoing 3rd year batch, then promotes 2nd to 3rd, then promotes 1st to 2nd.
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
+                      Why this order matters: it prevents different batches from mixing and avoids accidentally clearing newly promoted students. In each step, you can enter detained roll numbers so those students stay in the same year.
+                    </p>
                   </div>
+                  {!studentsLoaded ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 flex items-center justify-between">
+                      <p className="text-sm font-bold text-slate-600">
+                        Loading lifecycle status…
+                      </p>
+                      <RefreshCw size={18} className="text-slate-400 animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                          Step {activeLifecycleStep} of 3
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              activeLifecycleStep === 1
+                                ? "bg-red-500"
+                                : workflowProgress.cleanup3Done ||
+                                    thirdYearStudentsCount === 0
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-300"
+                            }`}
+                          />
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              activeLifecycleStep === 2
+                                ? "bg-orange-500"
+                                : workflowProgress.promote23Done
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-300"
+                            }`}
+                          />
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              activeLifecycleStep === 3
+                                ? "bg-indigo-500"
+                                : "bg-slate-300"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {studentsLoaded && activeLifecycleStep === 1 && (
+                    <div className="rounded-2xl border border-red-100 bg-red-50/40 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
+                          <Trash2 size={16} /> Step 1 - Cleanup 3rd Year
+                        </h4>
+                        <span
+                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                            workflowProgress.cleanup3Done
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {workflowProgress.cleanup3Done ? "Completed" : "Ready"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-500">
+                        Detected: {thirdYearStudentsCount} student(s) in 3rd year
+                      </p>
+                      <p className="text-xs font-semibold text-red-700/90">
+                        Clear outgoing 3rd year students. Enter detained roll numbers to keep repeaters.
+                      </p>
+                      <button
+                        onClick={handleBulkDeleteStudents}
+                        disabled={step1Locked}
+                        className="w-full px-5 h-12 bg-red-500 hover:bg-red-600 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                      >
+                        Clear Outgoing 3rd Year
+                      </button>
+                      {cleanupLockMessage && (
+                        <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
+                          {cleanupLockMessage}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {studentsLoaded && activeLifecycleStep === 2 && (
+                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                          <ArrowUpCircle size={16} /> Step 2 - Promote 2nd to 3rd
+                        </h4>
+                        <span
+                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                            workflowProgress.promote23Done
+                              ? "bg-emerald-100 text-emerald-700"
+                              : step2Locked
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {workflowProgress.promote23Done
+                            ? "Completed"
+                            : step2Locked
+                              ? "Locked"
+                              : "Ready"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-orange-700/90">
+                        Promotes all eligible 2nd-year students. Detained roll numbers stay in 2nd year.
+                      </p>
+                      <p className="text-[11px] font-bold text-slate-500">
+                        Detected: {secondYearStudentsCount} student(s) in 2nd year
+                      </p>
+                      <button
+                        onClick={handleStep23Promotion}
+                        disabled={step2Locked}
+                        className="w-full px-5 h-12 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-orange-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                      >
+                        Promote 2nd to 3rd
+                      </button>
+                      {thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done && (
+                        <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
+                          Step 2 locked until Step 1 is completed.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {studentsLoaded && activeLifecycleStep === 3 && (
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
+                          <ArrowUpCircle size={16} /> Step 3 - Promote 1st to 2nd
+                        </h4>
+                        <span
+                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                            step3Locked
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {step3Locked ? "Locked" : "Ready"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-indigo-700/90">
+                        Promotes all eligible 1st-year students. Detained roll numbers stay in 1st year.
+                      </p>
+                      <button
+                        onClick={handleStep12Promotion}
+                        disabled={step3Locked}
+                        className="w-full px-5 h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-indigo-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                      >
+                        Promote 1st to 2nd
+                      </button>
+                      {!workflowProgress.promote23Done && (
+                        <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
+                          Step 3 locked until Step 2 is completed.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Semester Isolation / Status Reset */}
                   <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100 space-y-5">
                     <h4 className="text-sm font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
-                      <RefreshCw size={16} /> New Semester Feedback Reset
+                      <RefreshCw size={16} /> Optional - New Semester Feedback Reset
                     </h4>
                     <p className="text-sm text-blue-800/80 mb-2 font-bold uppercase tracking-tight">Select a year and reset status for the next semester feedback cycle.</p>
                     <div className="flex flex-col sm:flex-row gap-4">
@@ -1484,31 +1937,6 @@ export default function HodDashboard({ user }) {
                     </div>
                   </div>
 
-                  {/* Batch Deletion */}
-                  <div className="p-6 bg-red-50/30 rounded-3xl border border-red-100 space-y-5 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                    <div>
-                      <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
-                        <Trash2 size={16} /> Graduation Cleanup
-                      </h4>
-                      <div className="space-y-3 mt-3">
-                        <p className="text-xs text-red-800/80 font-black uppercase tracking-tight">Permanently remove the outgoing 3rd Year graduating batch.</p>
-                        <div className="flex items-start gap-3 bg-white/50 p-3 rounded-xl border border-red-100/50 max-w-2xl">
-                          <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
-                          <p className="text-xs text-red-600 font-bold leading-relaxed uppercase tracking-tight">
-                            Note: Clear the 3rd year batch BEFORE promoting 2nd year students to 3rd year. 
-                            This prevents newly promoted students from being accidentally cleared.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleBulkDeleteStudents}
-                      disabled={isSubmitting}
-                      className="px-8 h-14 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-100 active:scale-95 shrink-0"
-                    >
-                      Clear 3rd Year Batch
-                    </button>
-                  </div>
                 </div>
               </div>
             </Card>
@@ -1576,10 +2004,18 @@ export default function HodDashboard({ user }) {
                       <Users size={32} strokeWidth={1.5} />
                     </div>
                     <p className="text-sm font-bold text-slate-600">
-                      {!searchRollNo && !filterClass && !filterDivision ? "Please apply a filter to view directory data" : "No students found"}
+                      {!searchRollNo && !filterClass && !filterDivision
+                        ? "Please apply a filter to view directory data"
+                        : filterClass && !filterDivision
+                          ? "Please select division"
+                          : "No students found"}
                     </p>
                     <p className="mt-1.5 max-w-[200px] text-[11px] leading-relaxed text-slate-400">
-                      {!searchRollNo && !filterClass && !filterDivision ? "Select a year, division, or search by name to display records." : "Try adjusting your search or imported records."}
+                      {!searchRollNo && !filterClass && !filterDivision
+                        ? "Select a year, division, or search by name to display records."
+                        : filterClass && !filterDivision
+                          ? "Choose a division to narrow students for the selected year."
+                          : "Try adjusting your search or imported records."}
                     </p>
                   </div>
                 ) : (
@@ -2101,27 +2537,43 @@ export default function HodDashboard({ user }) {
 
         {/* ALLOT TAB (YOUR CODE) */}
         {activeTab === "allot" && (
-          <Card className="p-0 overflow-hidden border-orange-100 shadow-md relative max-w-xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-            <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-r from-orange-400 to-amber-500"></div>
-            <div className="px-8 py-6 border-b border-slate-100 bg-white/50">
-              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800">
-                <div className="p-2 bg-orange-50 rounded-xl">
-                  <Link
-                    className="text-orange-500"
-                    size={24}
-                    strokeWidth={2.5}
-                  />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto animate-in slide-in-from-bottom-4 duration-500 items-start">
+            {/* Left Column: Form */}
+            <Card className="p-0 overflow-hidden border-orange-100 shadow-md relative">
+              <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-r from-orange-400 to-amber-500"></div>
+              <div className="px-8 py-6 border-b border-slate-100 bg-white/50">
+                <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-800">
+                  <div className="p-2 bg-orange-50 rounded-xl">
+                    <Link
+                      className="text-orange-500"
+                      size={24}
+                      strokeWidth={2.5}
+                    />
+                  </div>
+                  Faculty Allotment
+                </h2>
+                <p className="text-xs font-bold text-slate-400 mt-2 tracking-wide">
+                  Assign faculty to subjects for the current semester.
+                </p>
+              </div>
+              <form
+                onSubmit={handleAllotment}
+                className="p-8 space-y-6 bg-slate-50/30"
+              >
+              {editingAllotmentId && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs font-bold text-orange-800 flex items-center justify-between gap-3">
+                  <span className="truncate">
+                    Editing allotment: {allotForm.staff || "Faculty"} - {allotForm.subject || "Subject"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelEditAllotment}
+                    className="shrink-0 rounded-lg border border-orange-300 bg-white px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-orange-700 hover:bg-orange-100 transition-colors"
+                  >
+                    Exit Edit
+                  </button>
                 </div>
-                Faculty Allotment
-              </h2>
-              <p className="text-xs font-bold text-slate-400 mt-2 tracking-wide">
-                Assign faculty to subjects for the current semester.
-              </p>
-            </div>
-            <form
-              onSubmit={handleAllotment}
-              className="p-8 space-y-6 bg-slate-50/30"
-            >
+              )}
               <div className="space-y-1.5 relative z-[80]">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
                   Select Department
@@ -2233,18 +2685,23 @@ export default function HodDashboard({ user }) {
                   />
                 </div>
               </div>
-              <button className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-bold text-white shadow-md shadow-orange-500/20 hover:from-orange-600 hover:to-amber-600 transition-all active:scale-95 uppercase tracking-widest mt-6">
-                Confirm Allotment
-              </button>
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <button className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-bold text-white shadow-md shadow-orange-500/20 hover:from-orange-600 hover:to-amber-600 transition-all active:scale-95 uppercase tracking-widest">
+                  {editingAllotmentId ? "Update Allotment" : "Confirm Allotment"}
+                </button>
+              </div>
             </form>
+            </Card>
 
-            {/* List of current allotments */}
-            <div className="bg-white border-t border-slate-100 p-8">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2">
+            {/* Right Column: List of current allotments */}
+            <Card className="p-0 overflow-hidden border-orange-100 shadow-md relative flex flex-col h-full max-h-[800px]">
+              <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-r from-amber-500 to-orange-400"></div>
+              <div className="bg-white p-8 flex-1 overflow-hidden flex flex-col">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 shrink-0">
                 <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
                 Current Allotments
               </h3>
-              <div className="space-y-3">
+              <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
                 {allocations.length === 0 ? (
                   <p className="text-center py-6 text-slate-400 text-xs font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                     No active allotments found.
@@ -2270,19 +2727,35 @@ export default function HodDashboard({ user }) {
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => setAllotmentToDelete({ id: alloc.id, staff: alloc.staff, subject: alloc.subject })}
-                          className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors ml-4"
-                          title="Delete allotment"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="flex items-center ml-4 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditAllotment(alloc)}
+                            className={`p-2.5 rounded-xl transition-colors ${
+                              editingAllotmentId === alloc.id
+                                ? "text-orange-700 bg-orange-100"
+                                : "text-slate-300 hover:text-orange-600 hover:bg-orange-50"
+                            }`}
+                            title="Edit allotment"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAllotmentToDelete({ id: alloc.id, staff: alloc.staff, subject: alloc.subject })}
+                            className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Delete allotment"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </div>
                     ))
                 )}
               </div>
             </div>
-          </Card>
+            </Card>
+          </div>
         )}
 
         {/* NEW: MONITOR TAB */}
@@ -2424,88 +2897,159 @@ export default function HodDashboard({ user }) {
           </Card>
         )}
 
-      {/* Graduation Cleanup Modal */}
-      {showDeleteModal && (
+      {/* Detained Roll Input Modal */}
+      {detainedInputModal.open && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-red-100 bg-red-50/30 flex items-center justify-between">
+            <div className="p-6 border-b border-orange-100 bg-orange-50/30 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-red-900">
-                  Graduation Cleanup (3rd Year)
+                <h3 className="text-lg font-black text-orange-900">
+                  {detainedInputModal.title}
                 </h3>
-                <p className="text-xs font-bold text-red-600 mt-1">
-                  Uncheck students who failed and should repeat the year.
+                <p className="text-xs font-bold text-orange-600 mt-1">
+                  {detainedInputModal.message}
                 </p>
               </div>
               <button
-                onClick={() => setShowDeleteModal(false)}
-                className="p-2 hover:bg-red-100 rounded-xl text-red-400 transition-colors"
+                onClick={closeDetainedFlow}
+                className="p-2 hover:bg-orange-100 rounded-xl text-orange-400 transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6 max-h-[50vh] overflow-y-auto bg-slate-50/50">
-              <div className="space-y-2">
-                {deleteCandidates.map((std) => {
-                  const isExcluded = excludedFromDeletion.has(std.id);
-                  return (
-                    <div
-                      key={std.id}
-                      onClick={() => {
-                        const newSet = new Set(excludedFromDeletion);
-                        if (isExcluded) newSet.delete(std.id);
-                        else newSet.add(std.id);
-                        setExcludedFromDeletion(newSet);
-                      }}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                        isExcluded
-                          ? "bg-amber-50 border-amber-100"
-                          : "bg-white border-slate-200 hover:border-red-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                            isExcluded
-                              ? "border-amber-400 bg-white"
-                              : "border-red-400 bg-red-500 text-white"
-                          }`}
-                        >
-                          {!isExcluded && <CheckCircle size={14} />}
-                          {isExcluded && <div className="w-2 h-2 bg-amber-500 rounded-sm" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className={`text-xs font-black truncate ${isExcluded ? "text-amber-700" : "text-slate-800"}`}>
-                            {std.name}
-                          </p>
-                          <p className="text-[10px] font-bold text-slate-400">
-                            {std.rollNo} · {std.enrollmentNo}
-                          </p>
-                        </div>
-                      </div>
-                      {isExcluded && (
-                        <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest px-2 py-0.5 bg-amber-100 rounded-md">
-                          Failed/Repeater
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+            <div className="p-6 space-y-4 bg-slate-50/50">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">
+                  Students in this step: {detainedInputModal.candidates.length}
+                </p>
+                <textarea
+                  value={detainedRollInput}
+                  onChange={(e) => {
+                    setDetainedRollInput(e.target.value);
+                    if (detainedInputErrors.invalid.length || detainedInputErrors.notFound.length) {
+                      setDetainedInputErrors({ invalid: [], notFound: [] });
+                    }
+                  }}
+                  rows={4}
+                  placeholder="Enter detained roll numbers (comma or space separated)"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+                />
               </div>
+              {(detainedInputErrors.invalid.length > 0 ||
+                detainedInputErrors.notFound.length > 0) && (
+                <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-2">
+                  {detainedInputErrors.invalid.length > 0 && (
+                    <p className="text-[11px] font-bold text-red-700">
+                      Invalid roll numbers: {detainedInputErrors.invalid.join(", ")}
+                    </p>
+                  )}
+                  {detainedInputErrors.notFound.length > 0 && (
+                    <p className="text-[11px] font-bold text-red-700">
+                      Not found in this step: {detainedInputErrors.notFound.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
+              <p className="text-[11px] font-semibold text-slate-500">
+                Leave empty if no detained students for this step.
+              </p>
             </div>
             <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
               <button
-                onClick={() => setShowDeleteModal(false)}
+                onClick={closeDetainedFlow}
                 className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={executeBulkDelete}
-                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-red-600 shadow-lg shadow-red-200 transition-all hover:scale-[1.02] active:scale-95"
+                onClick={proceedWithDetainedRolls}
+                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-orange-600 shadow-lg shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
               >
-                Confirm & Delete{" "}
-                {deleteCandidates.length - excludedFromDeletion.size} Students
+                Proceed
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Detained Confirmation Modal */}
+      {detainedConfirmModal.open && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <Card className="w-full max-w-xl p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="p-6 border-b border-indigo-100 bg-indigo-50/30 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-indigo-900">
+                  {detainedConfirmModal.title}
+                </h3>
+                <p className="text-xs font-bold text-indigo-600 mt-1">
+                  These detained students will stay in their current year.
+                </p>
+              </div>
+              <button
+                onClick={closeDetainedFlow}
+                className="p-2 hover:bg-indigo-100 rounded-xl text-indigo-400 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 bg-slate-50/50 max-h-[55vh] overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl bg-white border border-slate-200 p-3">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Total</p>
+                  <p className="text-lg font-black text-slate-800">{detainedConfirmModal.candidates.length}</p>
+                </div>
+                <div className="rounded-xl bg-white border border-amber-200 p-3">
+                  <p className="text-[10px] text-amber-500 font-bold uppercase">Detained</p>
+                  <p className="text-lg font-black text-amber-700">{detainedConfirmModal.detainedStudents.length}</p>
+                </div>
+                <div className="rounded-xl bg-white border border-emerald-200 p-3">
+                  <p className="text-[10px] text-emerald-500 font-bold uppercase">
+                    {detainedConfirmModal.action === "cleanup3" ? "Will Be Cleared" : "Will Be Promoted"}
+                  </p>
+                  <p className="text-lg font-black text-emerald-700">{detainedConfirmModal.processableStudents.length}</p>
+                </div>
+              </div>
+              {detainedConfirmModal.duplicateCount > 0 && (
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Duplicate entries ignored: {detainedConfirmModal.duplicateCount}
+                </p>
+              )}
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-black text-slate-700 uppercase tracking-wide mb-3">
+                  Detained Students
+                </p>
+                {detainedConfirmModal.detainedStudents.length === 0 ? (
+                  <p className="text-sm font-semibold text-slate-500">No detained students entered.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {detainedConfirmModal.detainedStudents.map((std) => (
+                      <div key={std.id} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+                        <span className="text-sm font-black text-amber-800">{std.name}</span>
+                        <span className="text-[11px] font-bold text-amber-700">{std.rollNo}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+              <button
+                onClick={closeDetainedFlow}
+                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeDetainedAction}
+                className={`flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-[1.02] active:scale-95 ${
+                  detainedConfirmModal.action === "cleanup3"
+                    ? "bg-red-600 shadow-lg shadow-red-200"
+                    : "bg-blue-600 shadow-lg shadow-blue-200"
+                }`}
+              >
+                {detainedConfirmModal.action === "cleanup3"
+                  ? "Clear 3rd Year Batch"
+                  : "Promote Students"}
               </button>
             </div>
           </Card>
@@ -2666,23 +3210,7 @@ export default function HodDashboard({ user }) {
                     placeholder="e.g. 2024-25"
                   />
                 </div>
-                <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
-                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                    Semester
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={3}
-                    value={semester}
-                    onChange={(e) =>
-                      setSemester(
-                        e.target.value.replace(/[^IViv]/g, "").toUpperCase(),
-                      )
-                    }
-                    className="input-app text-sm font-bold py-2.5 w-full"
-                    placeholder="e.g. VI"
-                  />
-                </div>
+
                 <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
                   <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                     Department
@@ -2751,8 +3279,8 @@ export default function HodDashboard({ user }) {
               </div>
               <button
                 onClick={() => {
-                  if (!acadYear || !semester) {
-                    notifyError("Academic Year and Semester are required before printing.");
+                  if (!acadYear) {
+                    notifyError("Academic Year is required before printing.");
                     return;
                   }
                   window.print();
@@ -3346,161 +3874,6 @@ export default function HodDashboard({ user }) {
             </div>
           </Card>
         )}
-
-        {/* PROMOTE STUDENTS MODAL */}
-        {showPromoteModal &&
-          createPortal(
-            <div
-              style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                zIndex: 99999,
-                backgroundColor: "rgba(15,23,42,0.75)",
-                backdropFilter: "blur(5px)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <div
-                style={{
-                  backgroundColor: "white",
-                  borderRadius: "12px",
-                  padding: "24px",
-                  width: "90%",
-                  maxWidth: "600px",
-                  /* Custom maxHeight & flex column structure for scrolling list */
-                  maxHeight: "85vh",
-                  color: "#0f172a",
-                  zIndex: 999999,
-                  position: "relative",
-                  boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderBottom: "2px solid #f1f5f9",
-                    paddingBottom: "16px",
-                    marginBottom: "16px",
-                  }}
-                >
-                  <h3
-                    style={{
-                      fontSize: "1.25rem",
-                      fontWeight: "800",
-                      margin: 0,
-                      color: "#1e293b",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    Confirm Bulk Promotion
-                  </h3>
-                  <button
-                    onClick={() => setShowPromoteModal(false)}
-                    style={{
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 12px",
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Close ✕
-                  </button>
-                </div>
-                <p style={{ marginBottom: "16px", fontWeight: "500", color: "#475569" }}>
-                  Select students to EXCLUDE from promotion (e.g., failed or dropped out). Unchecked students will NOT be promoted to {promoteTarget}.
-                </p>
-                <div style={{ overflowY: "auto", flex: 1, marginBottom: "16px", paddingRight: "8px" }}>
-                  <ul
-                    style={{
-                      listStyle: "none",
-                      padding: 0,
-                      margin: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    {promoteCandidates.map((std) => {
-                      const isExcluded = excludedFromPromotion.has(std.id);
-                      return (
-                        <li
-                          key={std.id}
-                          style={{
-                            padding: "12px",
-                            border: `1px solid ${isExcluded ? "#f87171" : "#e2e8f0"}`,
-                            borderRadius: "8px",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            background: isExcluded ? "#fef2f2" : "#f8fafc",
-                            cursor: "pointer",
-                            transition: "all 0.2s"
-                          }}
-                          onClick={() => {
-                            const newSet = new Set(excludedFromPromotion);
-                            if (isExcluded) newSet.delete(std.id);
-                            else newSet.add(std.id);
-                            setExcludedFromPromotion(newSet);
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <input
-                              type="checkbox"
-                              checked={!isExcluded}
-                              onChange={() => {}} // Handled by inline li onClick
-                              style={{ width: "18px", height: "18px", cursor: "pointer" }}
-                            />
-                            <div style={{ display: "flex", flexDirection: "column" }}>
-                              <span style={{ fontWeight: "bold", fontSize: "14px", color: isExcluded ? "#991b1b" : "#1e293b" }}>
-                                {std.name}
-                              </span>
-                              <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase" }}>
-                                {std.rollNo} • Div {std.division || "A"}
-                              </span>
-                            </div>
-                          </div>
-                          {isExcluded && (
-                            <span style={{ fontSize: "10px", fontWeight: "900", color: "#ef4444", textTransform: "uppercase", background: "#fee2e2", padding: "4px 8px", borderRadius: "6px" }}>
-                              Excluded
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", borderTop: "2px solid #f1f5f9", paddingTop: "16px" }}>
-                  <button
-                    onClick={() => setShowPromoteModal(false)}
-                    style={{ padding: "10px 20px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "white", fontWeight: "bold", cursor: "pointer", color: "#475569" }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={executeBulkPromote}
-                    style={{ padding: "10px 20px", borderRadius: "8px", border: "none", background: "#3b82f6", color: "white", fontWeight: "bold", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px" }}
-                  >
-                    Promote {promoteCandidates.length - excludedFromPromotion.size} Students
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )}
 
         {/* REMAINING STUDENTS MODAL */}
         {showRemainingModal &&

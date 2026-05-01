@@ -35,6 +35,10 @@ export default function ChangePasswordModal({ open, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!current) return notifyError("Please enter your current password.");
+    if (!next) return notifyError("Please enter your new password.");
+    if (!confirm) return notifyError("Please confirm your new password.");
+    
     const user = auth.currentUser;
     if (!user?.email) {
       notifyError("No Firebase account session. Sign in again.");

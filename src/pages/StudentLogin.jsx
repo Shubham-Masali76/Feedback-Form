@@ -148,6 +148,7 @@ export default function StudentLogin({
 
   const handleVerifyOTP = async (e) => {
     e.preventDefault();
+    if (!otpInput.trim()) return warning("Please enter the 6-digit OTP.");
     setLoading(true);
 
     if (validOtps.includes(otpInput)) {
