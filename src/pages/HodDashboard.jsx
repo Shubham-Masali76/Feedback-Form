@@ -207,7 +207,7 @@ export default function HodDashboard({ user }) {
 
       const allStaffQ = query(
         collection(db, "Users"),
-        where("role", "==", "staff"),
+        where("role", "in", ["staff", "hod"]),
       );
       const allStaffSnap = await getDocs(allStaffQ);
       const activeStaff = allStaffSnap.docs
@@ -236,9 +236,9 @@ export default function HodDashboard({ user }) {
         ...d.data(),
         id: d.id,
       }));
-      
+
       // Filter in memory for the directory tab
-      setStudents(allFetchedStudents.filter(s => s.department === user.dept));
+      setStudents(allFetchedStudents.filter((s) => s.department === user.dept));
       setStudentsLoaded(true);
 
       // Fetch Feedbacks for Monitor & Reports
@@ -374,7 +374,8 @@ export default function HodDashboard({ user }) {
         const match = s.match(/\d/);
         if (match) {
           const num = parseInt(match[0]);
-          if (num >= 1 && num <= 6) return ["", "I", "II", "III", "IV", "V", "VI"][num];
+          if (num >= 1 && num <= 6)
+            return ["", "I", "II", "III", "IV", "V", "VI"][num];
         }
         if (s.includes("VI")) return "VI";
         if (s.includes("IV")) return "IV";
@@ -385,12 +386,16 @@ export default function HodDashboard({ user }) {
         return val;
       };
 
-      const fbMatch = feedbacks.find((f) => f.subject === reportSubject && f.semester);
+      const fbMatch = feedbacks.find(
+        (f) => f.subject === reportSubject && f.semester,
+      );
       if (fbMatch && fbMatch.semester) {
         setSemester(formatRoman(fbMatch.semester));
         return;
       }
-      const allocMatch = allocations.find((a) => a.subject === reportSubject && a.semester);
+      const allocMatch = allocations.find(
+        (a) => a.subject === reportSubject && a.semester,
+      );
       if (allocMatch && allocMatch.semester) {
         setSemester(formatRoman(allocMatch.semester));
       }
@@ -631,30 +636,24 @@ export default function HodDashboard({ user }) {
     return [
       {
         group: `Semesters 1 & 2 - ${s1?.schemeLabel || "K"}-Scheme`,
-        options: [s1, s2]
-          .filter(Boolean)
-          .map((s) => ({
-            value: s.value,
-            label: `Semester ${s.value} (${s.code})`,
-          })),
+        options: [s1, s2].filter(Boolean).map((s) => ({
+          value: s.value,
+          label: `Semester ${s.value} (${s.code})`,
+        })),
       },
       {
         group: `Semesters 3 & 4 - ${s3?.schemeLabel || "K"}-Scheme`,
-        options: [s3, s4]
-          .filter(Boolean)
-          .map((s) => ({
-            value: s.value,
-            label: `Semester ${s.value} (${s.code})`,
-          })),
+        options: [s3, s4].filter(Boolean).map((s) => ({
+          value: s.value,
+          label: `Semester ${s.value} (${s.code})`,
+        })),
       },
       {
         group: `Semesters 5 & 6 - ${s5?.schemeLabel || "K"}-Scheme`,
-        options: [s5, s6]
-          .filter(Boolean)
-          .map((s) => ({
-            value: s.value,
-            label: `Semester ${s.value} (${s.code})`,
-          })),
+        options: [s5, s6].filter(Boolean).map((s) => ({
+          value: s.value,
+          label: `Semester ${s.value} (${s.code})`,
+        })),
       },
     ];
   }, [semesterOptionMeta]);
@@ -715,7 +714,11 @@ export default function HodDashboard({ user }) {
       });
       fetchData();
     } catch {
-      notifyError(editingAllotmentId ? "Failed to update allotment." : "Failed to allot faculty.");
+      notifyError(
+        editingAllotmentId
+          ? "Failed to update allotment."
+          : "Failed to allot faculty.",
+      );
     }
   };
 
@@ -793,10 +796,10 @@ export default function HodDashboard({ user }) {
       // 1. Department Filter
       if (monitorDept) {
         const staffObj = allStaffList.find((s) => s.name === f.staffName);
-        const isDeptMatch = 
-          (f.department === monitorDept) || 
+        const isDeptMatch =
+          f.department === monitorDept ||
           (staffObj && staffObj.dept === monitorDept);
-        
+
         if (!isDeptMatch) return false;
       }
       // 2. Staff Filter
@@ -845,16 +848,21 @@ export default function HodDashboard({ user }) {
 
   const totalStudentsInClass = studentsInClass.length;
 
-  const submittedStudentNames = useMemo(() => new Set(reportData.map((f) => f.studentName)), [reportData]);
+  const submittedStudentNames = useMemo(
+    () => new Set(reportData.map((f) => f.studentName)),
+    [reportData],
+  );
   const submittedStudents = submittedStudentNames.size;
-  const remainingStudentsList = useMemo(() => studentsInClass.filter(
-    (s) => !submittedStudentNames.has(s.name),
-  ), [studentsInClass, submittedStudentNames]);
+  const remainingStudentsList = useMemo(
+    () => studentsInClass.filter((s) => !submittedStudentNames.has(s.name)),
+    [studentsInClass, submittedStudentNames],
+  );
   const remainingStudents = remainingStudentsList.length;
 
-  const submittedStudentsList = useMemo(() => studentsInClass.filter((s) =>
-    submittedStudentNames.has(s.name),
-  ), [studentsInClass, submittedStudentNames]);
+  const submittedStudentsList = useMemo(
+    () => studentsInClass.filter((s) => submittedStudentNames.has(s.name)),
+    [studentsInClass, submittedStudentNames],
+  );
 
   const filteredStudents = useMemo(() => {
     if (!searchRollNo && !filterClass && !filterDivision) return [];
@@ -874,7 +882,8 @@ export default function HodDashboard({ user }) {
       const normalizedFilterDiv = String(filterDivision || "")
         .trim()
         .toUpperCase();
-      const matchDiv = !normalizedFilterDiv || normalizedStudentDiv === normalizedFilterDiv;
+      const matchDiv =
+        !normalizedFilterDiv || normalizedStudentDiv === normalizedFilterDiv;
       return matchSearch && matchClass && matchDiv;
     });
   }, [students, searchRollNo, filterClass, filterDivision]);
@@ -1008,7 +1017,10 @@ export default function HodDashboard({ user }) {
 
     const normalizedTokens = tokensRaw.map((r) => normalizeRollDigits(r));
     const uniqueRolls = [...new Set(normalizedTokens)];
-    const duplicateCount = Math.max(0, normalizedTokens.length - uniqueRolls.length);
+    const duplicateCount = Math.max(
+      0,
+      normalizedTokens.length - uniqueRolls.length,
+    );
 
     const invalid = uniqueRolls.filter((r) => !isValidRollNumber(r));
     const candidateByRoll = new Map(
@@ -1063,7 +1075,11 @@ export default function HodDashboard({ user }) {
       sourceClass,
     } = detainedConfirmModal;
 
-    if (action !== "cleanup3" && action !== "promote23" && action !== "promote12") {
+    if (
+      action !== "cleanup3" &&
+      action !== "promote23" &&
+      action !== "promote12"
+    ) {
       warning("Invalid lifecycle action.");
       return;
     }
@@ -1171,7 +1187,9 @@ export default function HodDashboard({ user }) {
 
     if (sourceYear !== null && targetYearNum !== null) {
       if (targetYearNum !== sourceYear + 1) {
-        warning(`Invalid promotion rule: You must promote students exactly one year forward. Jumping from Year ${sourceYear} to Year ${targetYearNum} is not allowed!`);
+        warning(
+          `Invalid promotion rule: You must promote students exactly one year forward. Jumping from Year ${sourceYear} to Year ${targetYearNum} is not allowed!`,
+        );
         return;
       }
     }
@@ -1182,11 +1200,17 @@ export default function HodDashboard({ user }) {
       thirdYearStudentsCount > 0 &&
       !workflowProgress.cleanup3Done
     ) {
-      warning("Step 2 is locked. Complete Step 1 (Clear Outgoing 3rd Year) first.");
+      warning(
+        "Step 2 is locked. Complete Step 1 (Clear Outgoing 3rd Year) first.",
+      );
       return;
     }
 
-    if (sourceYear === 1 && targetYearNum === 2 && !workflowProgress.promote23Done) {
+    if (
+      sourceYear === 1 &&
+      targetYearNum === 2 &&
+      !workflowProgress.promote23Done
+    ) {
       warning("Step 3 is locked. Complete Step 2 (Promote 2nd to 3rd) first.");
       return;
     }
@@ -1233,16 +1257,16 @@ export default function HodDashboard({ user }) {
   };
 
   const handleBulkDeleteStudents = async () => {
-    const thirdYearOption = dynamicClassOptions.find((g) => g.group.includes("3rd Year"))?.options[0];
+    const thirdYearOption = dynamicClassOptions.find((g) =>
+      g.group.includes("3rd Year"),
+    )?.options[0];
     const target = thirdYearOption?.value;
     if (!target) {
       warning("Could not identify 3rd year class.");
       return;
     }
 
-    const studentsToDelete = students.filter(
-      (s) => s.targetClass === target,
-    );
+    const studentsToDelete = students.filter((s) => s.targetClass === target);
     if (studentsToDelete.length === 0) {
       setWorkflowProgress((prev) => ({
         ...prev,
@@ -1263,7 +1287,9 @@ export default function HodDashboard({ user }) {
   };
 
   const getYearFromClassCode = (classCode) => {
-    const normalized = String(classCode || "").trim().toUpperCase();
+    const normalized = String(classCode || "")
+      .trim()
+      .toUpperCase();
     if (!normalized) return null;
 
     const legacyPattern = normalized.match(/^([1-3])Y/);
@@ -1278,7 +1304,9 @@ export default function HodDashboard({ user }) {
   };
 
   const getSilentSemesterShiftTarget = (classCode) => {
-    const normalized = String(classCode || "").trim().toUpperCase();
+    const normalized = String(classCode || "")
+      .trim()
+      .toUpperCase();
     if (!normalized) return null;
 
     // New format: CM1K, CM3K, ...
@@ -1313,11 +1341,13 @@ export default function HodDashboard({ user }) {
   );
 
   const thirdYearStudentsCount = useMemo(
-    () => students.filter((s) => getYearFromClassCode(s.targetClass) === 3).length,
+    () =>
+      students.filter((s) => getYearFromClassCode(s.targetClass) === 3).length,
     [students],
   );
   const secondYearStudentsCount = useMemo(
-    () => students.filter((s) => getYearFromClassCode(s.targetClass) === 2).length,
+    () =>
+      students.filter((s) => getYearFromClassCode(s.targetClass) === 2).length,
     [students],
   );
   const cleanupLockMessage = workflowProgress.promote23Done
@@ -1364,7 +1394,10 @@ export default function HodDashboard({ user }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(lifecycleStorageKey, JSON.stringify(workflowProgress));
+      localStorage.setItem(
+        lifecycleStorageKey,
+        JSON.stringify(workflowProgress),
+      );
     } catch {
       // ignore storage failures
     }
@@ -1470,7 +1503,9 @@ export default function HodDashboard({ user }) {
   };
 
   const filteredSubjectList = subjectSemesterFilter
-    ? subjectList.filter((s) => String(s.semester || "") === subjectSemesterFilter)
+    ? subjectList.filter(
+        (s) => String(s.semester || "") === subjectSemesterFilter,
+      )
     : subjectList;
 
   return (
@@ -1580,7 +1615,7 @@ export default function HodDashboard({ user }) {
                         { value: "A", label: "Div A" },
                         { value: "B", label: "Div B" },
                       ]}
-                    placeholder="Select Division"
+                      placeholder="Select Division"
                     />
                   </div>
                   <label className="flex w-full md:w-auto md:flex-1 min-h-[44px] cursor-pointer items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 transition-all md:min-w-[160px] scale-100 hover:scale-[1.02] active:scale-95">
@@ -1736,7 +1771,8 @@ export default function HodDashboard({ user }) {
                       Student Lifecycle Tools
                     </h2>
                     <p className="text-slate-500 text-base mt-1 font-semibold">
-                      Manage student promotions, semester feedback resets, and graduations.
+                      Manage student promotions, semester feedback resets, and
+                      graduations.
                     </p>
                   </div>
                 </div>
@@ -1747,10 +1783,15 @@ export default function HodDashboard({ user }) {
                       What this does
                     </p>
                     <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
-                      This tool runs the annual cycle safely: it clears the outgoing 3rd year batch, then promotes 2nd to 3rd, then promotes 1st to 2nd.
+                      This tool runs the annual cycle safely: it clears the
+                      outgoing 3rd year batch, then promotes 2nd to 3rd, then
+                      promotes 1st to 2nd.
                     </p>
                     <p className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
-                      Why this order matters: it prevents different batches from mixing and avoids accidentally clearing newly promoted students. In each step, you can enter detained roll numbers so those students stay in the same year.
+                      Why this order matters: it prevents different batches from
+                      mixing and avoids accidentally clearing newly promoted
+                      students. In each step, you can enter detained roll
+                      numbers so those students stay in the same year.
                     </p>
                   </div>
                   {!studentsLoaded ? (
@@ -1758,7 +1799,10 @@ export default function HodDashboard({ user }) {
                       <p className="text-sm font-bold text-slate-600">
                         Loading lifecycle status…
                       </p>
-                      <RefreshCw size={18} className="text-slate-400 animate-spin" />
+                      <RefreshCw
+                        size={18}
+                        className="text-slate-400 animate-spin"
+                      />
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
@@ -1811,14 +1855,18 @@ export default function HodDashboard({ user }) {
                               : "bg-slate-100 text-slate-600"
                           }`}
                         >
-                          {workflowProgress.cleanup3Done ? "Completed" : "Ready"}
+                          {workflowProgress.cleanup3Done
+                            ? "Completed"
+                            : "Ready"}
                         </span>
                       </div>
                       <p className="text-[11px] font-bold text-slate-500">
-                        Detected: {thirdYearStudentsCount} student(s) in 3rd year
+                        Detected: {thirdYearStudentsCount} student(s) in 3rd
+                        year
                       </p>
                       <p className="text-xs font-semibold text-red-700/90">
-                        Clear outgoing 3rd year students. Enter detained roll numbers to keep repeaters.
+                        Clear outgoing 3rd year students. Enter detained roll
+                        numbers to keep repeaters.
                       </p>
                       <button
                         onClick={handleBulkDeleteStudents}
@@ -1839,7 +1887,8 @@ export default function HodDashboard({ user }) {
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
-                          <ArrowUpCircle size={16} /> Step 2 - Promote 2nd to 3rd
+                          <ArrowUpCircle size={16} /> Step 2 - Promote 2nd to
+                          3rd
                         </h4>
                         <span
                           className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
@@ -1858,10 +1907,12 @@ export default function HodDashboard({ user }) {
                         </span>
                       </div>
                       <p className="text-xs font-semibold text-orange-700/90">
-                        Promotes all eligible 2nd-year students. Detained roll numbers stay in 2nd year.
+                        Promotes all eligible 2nd-year students. Detained roll
+                        numbers stay in 2nd year.
                       </p>
                       <p className="text-[11px] font-bold text-slate-500">
-                        Detected: {secondYearStudentsCount} student(s) in 2nd year
+                        Detected: {secondYearStudentsCount} student(s) in 2nd
+                        year
                       </p>
                       <button
                         onClick={handleStep23Promotion}
@@ -1870,11 +1921,12 @@ export default function HodDashboard({ user }) {
                       >
                         Promote 2nd to 3rd
                       </button>
-                      {thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done && (
-                        <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
-                          Step 2 locked until Step 1 is completed.
-                        </p>
-                      )}
+                      {thirdYearStudentsCount > 0 &&
+                        !workflowProgress.cleanup3Done && (
+                          <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
+                            Step 2 locked until Step 1 is completed.
+                          </p>
+                        )}
                     </div>
                   )}
 
@@ -1882,7 +1934,8 @@ export default function HodDashboard({ user }) {
                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
-                          <ArrowUpCircle size={16} /> Step 3 - Promote 1st to 2nd
+                          <ArrowUpCircle size={16} /> Step 3 - Promote 1st to
+                          2nd
                         </h4>
                         <span
                           className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
@@ -1895,7 +1948,8 @@ export default function HodDashboard({ user }) {
                         </span>
                       </div>
                       <p className="text-xs font-semibold text-indigo-700/90">
-                        Promotes all eligible 1st-year students. Detained roll numbers stay in 1st year.
+                        Promotes all eligible 1st-year students. Detained roll
+                        numbers stay in 1st year.
                       </p>
                       <button
                         onClick={handleStep12Promotion}
@@ -1915,9 +1969,13 @@ export default function HodDashboard({ user }) {
                   {/* Semester Isolation / Status Reset */}
                   <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100 space-y-5">
                     <h4 className="text-sm font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
-                      <RefreshCw size={16} /> Optional - New Semester Feedback Reset
+                      <RefreshCw size={16} /> Optional - New Semester Feedback
+                      Reset
                     </h4>
-                    <p className="text-sm text-blue-800/80 mb-2 font-bold uppercase tracking-tight">Select a year and reset status for the next semester feedback cycle.</p>
+                    <p className="text-sm text-blue-800/80 mb-2 font-bold uppercase tracking-tight">
+                      Select a year and reset status for the next semester
+                      feedback cycle.
+                    </p>
                     <div className="flex flex-col sm:flex-row gap-4">
                       <div className="flex-1">
                         <CustomSelect
@@ -1936,7 +1994,6 @@ export default function HodDashboard({ user }) {
                       </button>
                     </div>
                   </div>
-
                 </div>
               </div>
             </Card>
@@ -2293,7 +2350,9 @@ export default function HodDashboard({ user }) {
                   </label>
                   <CustomSelect
                     value={subForm.semester}
-                    onChange={(val) => setSubForm({ ...subForm, semester: val })}
+                    onChange={(val) =>
+                      setSubForm({ ...subForm, semester: val })
+                    }
                     options={groupedSemesterSelectOptions}
                     placeholder="Select Semester"
                   />
@@ -2560,200 +2619,214 @@ export default function HodDashboard({ user }) {
                 onSubmit={handleAllotment}
                 className="p-8 space-y-6 bg-slate-50/30"
               >
-              {editingAllotmentId && (
-                <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs font-bold text-orange-800 flex items-center justify-between gap-3">
-                  <span className="truncate">
-                    Editing allotment: {allotForm.staff || "Faculty"} - {allotForm.subject || "Subject"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCancelEditAllotment}
-                    className="shrink-0 rounded-lg border border-orange-300 bg-white px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-orange-700 hover:bg-orange-100 transition-colors"
-                  >
-                    Exit Edit
-                  </button>
-                </div>
-              )}
-              <div className="space-y-1.5 relative z-[80]">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                  Select Department
-                </label>
-                <CustomSelect
-                  value={allotForm.staffDept}
-                  onChange={(val) =>
-                    setAllotForm({ ...allotForm, staffDept: val, staff: "" })
-                  }
-                  options={departmentsList.map((d) => ({
-                    value: d,
-                    label: d,
-                  }))}
-                  placeholder="Select Department"
-                />
-              </div>
-              <div className="space-y-1.5 relative z-[70]">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                  Select Faculty
-                </label>
-                <CustomSelect
-                  value={allotForm.staff}
-                  onChange={(val) => setAllotForm({ ...allotForm, staff: val })}
-                  options={allStaffList
-                    .filter((s) => s.dept === allotForm.staffDept)
-                    .map((s) => ({ value: s.name, label: s.name }))}
-                  placeholder="Choose Staff"
-                />
-              </div>
-              <div className="space-y-1.5 relative z-[60]">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                  Select Subject
-                </label>
-                <CustomSelect
-                  value={allotForm.subject}
-                  onChange={(val) =>
-                    setAllotForm({ ...allotForm, subject: val })
-                  }
-                  options={[
-                    {
-                      group: "--- MANDATORY ---",
-                      options: allSubjectList
-                        .filter(
-                          (s) =>
-                            s.department ===
-                              (allotForm.staffDept || user.dept) &&
-                            !s.isElective &&
-                            (!allotForm.tClass ||
-                              !s.semester ||
-                              s.semester ===
-                                extractSemesterNumber(allotForm.tClass)),
-                        )
-                        .map((s) => ({
-                          value: s.name,
-                          label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
-                        })),
-                    },
-                    {
-                      group: "--- ELECTIVE ---",
-                      options: allSubjectList
-                        .filter(
-                          (s) =>
-                            s.department ===
-                              (allotForm.staffDept || user.dept) &&
-                            s.isElective &&
-                            (!allotForm.tClass ||
-                              !s.semester ||
-                              s.semester ===
-                                extractSemesterNumber(allotForm.tClass)),
-                        )
-                        .map((s) => ({
-                          value: s.name,
-                          label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
-                        })),
-                    },
-                  ]}
-                  placeholder="Choose Subject"
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 relative z-50">
-                <div className="space-y-1.5 relative z-40">
+                {editingAllotmentId && (
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs font-bold text-orange-800 flex items-center justify-between gap-3">
+                    <span className="truncate">
+                      Editing allotment: {allotForm.staff || "Faculty"} -{" "}
+                      {allotForm.subject || "Subject"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditAllotment}
+                      className="shrink-0 rounded-lg border border-orange-300 bg-white px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-orange-700 hover:bg-orange-100 transition-colors"
+                    >
+                      Exit Edit
+                    </button>
+                  </div>
+                )}
+                <div className="space-y-1.5 relative z-[80]">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                    Target Class
+                    Select Department
                   </label>
                   <CustomSelect
-                    value={allotForm.tClass}
+                    value={allotForm.staffDept}
                     onChange={(val) =>
-                      setAllotForm({ ...allotForm, tClass: val })
+                      setAllotForm({ ...allotForm, staffDept: val, staff: "" })
                     }
-                    options={dynamicClassOptionsForAllotment}
-                    placeholder="Target Class"
+                    options={departmentsList.map((d) => ({
+                      value: d,
+                      label: d,
+                    }))}
+                    placeholder="Select Department"
                   />
                 </div>
-                <div className="space-y-1.5 relative z-30">
+                <div className="space-y-1.5 relative z-[70]">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-                    Division
+                    Select Faculty
                   </label>
                   <CustomSelect
-                    value={allotForm.division}
+                    value={allotForm.staff}
                     onChange={(val) =>
-                      setAllotForm({ ...allotForm, division: val })
+                      setAllotForm({ ...allotForm, staff: val })
+                    }
+                    options={allStaffList
+                      .filter((s) => s.dept === allotForm.staffDept)
+                      .map((s) => ({ value: s.name, label: s.name }))}
+                    placeholder="Choose Staff"
+                  />
+                </div>
+                <div className="space-y-1.5 relative z-[60]">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                    Select Subject
+                  </label>
+                  <CustomSelect
+                    value={allotForm.subject}
+                    onChange={(val) =>
+                      setAllotForm({ ...allotForm, subject: val })
                     }
                     options={[
-                      { value: "A", label: "Div A" },
-                      { value: "B", label: "Div B" },
-                      { value: "All", label: "All Divisions" },
+                      {
+                        group: "--- MANDATORY ---",
+                        options: allSubjectList
+                          .filter(
+                            (s) =>
+                              s.department ===
+                                (allotForm.staffDept || user.dept) &&
+                              !s.isElective &&
+                              (!allotForm.tClass ||
+                                !s.semester ||
+                                s.semester ===
+                                  extractSemesterNumber(allotForm.tClass)),
+                          )
+                          .map((s) => ({
+                            value: s.name,
+                            label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
+                          })),
+                      },
+                      {
+                        group: "--- ELECTIVE ---",
+                        options: allSubjectList
+                          .filter(
+                            (s) =>
+                              s.department ===
+                                (allotForm.staffDept || user.dept) &&
+                              s.isElective &&
+                              (!allotForm.tClass ||
+                                !s.semester ||
+                                s.semester ===
+                                  extractSemesterNumber(allotForm.tClass)),
+                          )
+                          .map((s) => ({
+                            value: s.name,
+                            label: `${s.name} (${s.code})${s.semester ? ` - Sem ${s.semester}` : ""}`,
+                          })),
+                      },
                     ]}
-                    placeholder="Division"
+                    placeholder="Choose Subject"
                   />
                 </div>
-              </div>
-              <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                <button className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-bold text-white shadow-md shadow-orange-500/20 hover:from-orange-600 hover:to-amber-600 transition-all active:scale-95 uppercase tracking-widest">
-                  {editingAllotmentId ? "Update Allotment" : "Confirm Allotment"}
-                </button>
-              </div>
-            </form>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 relative z-50">
+                  <div className="space-y-1.5 relative z-40">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Target Class
+                    </label>
+                    <CustomSelect
+                      value={allotForm.tClass}
+                      onChange={(val) =>
+                        setAllotForm({ ...allotForm, tClass: val })
+                      }
+                      options={dynamicClassOptionsForAllotment}
+                      placeholder="Target Class"
+                    />
+                  </div>
+                  <div className="space-y-1.5 relative z-30">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                      Division
+                    </label>
+                    <CustomSelect
+                      value={allotForm.division}
+                      onChange={(val) =>
+                        setAllotForm({ ...allotForm, division: val })
+                      }
+                      options={[
+                        { value: "A", label: "Div A" },
+                        { value: "B", label: "Div B" },
+                        { value: "All", label: "All Divisions" },
+                      ]}
+                      placeholder="Division"
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                  <button className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 py-3.5 text-sm font-bold text-white shadow-md shadow-orange-500/20 hover:from-orange-600 hover:to-amber-600 transition-all active:scale-95 uppercase tracking-widest">
+                    {editingAllotmentId
+                      ? "Update Allotment"
+                      : "Confirm Allotment"}
+                  </button>
+                </div>
+              </form>
             </Card>
 
             {/* Right Column: List of current allotments */}
             <Card className="p-0 overflow-hidden border-orange-100 shadow-md relative flex flex-col h-full max-h-[800px]">
               <div className="absolute top-0 right-0 w-full h-2 bg-gradient-to-r from-amber-500 to-orange-400"></div>
               <div className="bg-white p-8 flex-1 overflow-hidden flex flex-col">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 shrink-0">
-                <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
-                Current Allotments
-              </h3>
-              <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
-                {allocations.length === 0 ? (
-                  <p className="text-center py-6 text-slate-400 text-xs font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    No active allotments found.
-                  </p>
-                ) : (
-                  allocations
-                    .sort((a, b) => a.staff.localeCompare(b.staff))
-                    .map((alloc) => (
-                      <div
-                        key={alloc.id}
-                        className="group flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:border-orange-200 transition-all shadow-sm hover:shadow-md"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-black text-slate-800 truncate">
-                            {alloc.staff}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2 mt-1">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${!alloc.subject?.trim() ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}>
-                              {alloc.subject?.trim() || "Unnamed Subject"}
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md ring-1 ring-slate-100">
-                              {alloc.targetClass || alloc.tClass} · Div {alloc.division}
-                            </span>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2 shrink-0">
+                  <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+                  Current Allotments
+                </h3>
+                <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+                  {allocations.length === 0 ? (
+                    <p className="text-center py-6 text-slate-400 text-xs font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      No active allotments found.
+                    </p>
+                  ) : (
+                    allocations
+                      .sort((a, b) => a.staff.localeCompare(b.staff))
+                      .map((alloc) => (
+                        <div
+                          key={alloc.id}
+                          className="group flex items-center justify-between p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:border-orange-200 transition-all shadow-sm hover:shadow-md"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-black text-slate-800 truncate">
+                              {alloc.staff}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${!alloc.subject?.trim() ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}
+                              >
+                                {alloc.subject?.trim() || "Unnamed Subject"}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-md ring-1 ring-slate-100">
+                                {alloc.targetClass || alloc.tClass} · Div{" "}
+                                {alloc.division}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center ml-4 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleEditAllotment(alloc)}
+                              className={`p-2.5 rounded-xl transition-colors ${
+                                editingAllotmentId === alloc.id
+                                  ? "text-orange-700 bg-orange-100"
+                                  : "text-slate-300 hover:text-orange-600 hover:bg-orange-50"
+                              }`}
+                              title="Edit allotment"
+                            >
+                              <Edit2 size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAllotmentToDelete({
+                                  id: alloc.id,
+                                  staff: alloc.staff,
+                                  subject: alloc.subject,
+                                })
+                              }
+                              className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              title="Delete allotment"
+                            >
+                              <Trash2 size={18} />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center ml-4 gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleEditAllotment(alloc)}
-                            className={`p-2.5 rounded-xl transition-colors ${
-                              editingAllotmentId === alloc.id
-                                ? "text-orange-700 bg-orange-100"
-                                : "text-slate-300 hover:text-orange-600 hover:bg-orange-50"
-                            }`}
-                            title="Edit allotment"
-                          >
-                            <Edit2 size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAllotmentToDelete({ id: alloc.id, staff: alloc.staff, subject: alloc.subject })}
-                            className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            title="Delete allotment"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                )}
+                      ))
+                  )}
+                </div>
               </div>
-            </div>
             </Card>
           </div>
         )}
@@ -2819,10 +2892,8 @@ export default function HodDashboard({ user }) {
               </div>
             </div>
 
-              {monitorDept &&
-              monitorStaff &&
-              monitorSubject ? (
-                <div className="flex-1 overflow-auto bg-slate-50/30">
+            {monitorDept && monitorStaff && monitorSubject ? (
+              <div className="flex-1 overflow-auto bg-slate-50/30">
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-white sticky top-0 shadow-sm z-10 border-b border-slate-200">
                     <tr>
@@ -2889,268 +2960,306 @@ export default function HodDashboard({ user }) {
                   Select Filters to Monitor
                 </h3>
                 <p className="text-sm text-blue-600/70 font-medium mt-2 max-w-sm mx-auto">
-                  Please select a specific Department, Faculty member, and Subject
-                  above to view live feedback data.
+                  Please select a specific Department, Faculty member, and
+                  Subject above to view live feedback data.
                 </p>
               </div>
             )}
           </Card>
         )}
 
-      {/* Detained Roll Input Modal */}
-      {detainedInputModal.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-orange-100 bg-orange-50/30 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-orange-900">
-                  {detainedInputModal.title}
-                </h3>
-                <p className="text-xs font-bold text-orange-600 mt-1">
-                  {detainedInputModal.message}
-                </p>
-              </div>
-              <button
-                onClick={closeDetainedFlow}
-                className="p-2 hover:bg-orange-100 rounded-xl text-orange-400 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 bg-slate-50/50">
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">
-                  Students in this step: {detainedInputModal.candidates.length}
-                </p>
-                <textarea
-                  value={detainedRollInput}
-                  onChange={(e) => {
-                    setDetainedRollInput(e.target.value);
-                    if (detainedInputErrors.invalid.length || detainedInputErrors.notFound.length) {
-                      setDetainedInputErrors({ invalid: [], notFound: [] });
-                    }
-                  }}
-                  rows={4}
-                  placeholder="Enter detained roll numbers (comma or space separated)"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
-                />
-              </div>
-              {(detainedInputErrors.invalid.length > 0 ||
-                detainedInputErrors.notFound.length > 0) && (
-                <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-2">
-                  {detainedInputErrors.invalid.length > 0 && (
-                    <p className="text-[11px] font-bold text-red-700">
-                      Invalid roll numbers: {detainedInputErrors.invalid.join(", ")}
-                    </p>
-                  )}
-                  {detainedInputErrors.notFound.length > 0 && (
-                    <p className="text-[11px] font-bold text-red-700">
-                      Not found in this step: {detainedInputErrors.notFound.join(", ")}
-                    </p>
-                  )}
-                </div>
-              )}
-              <p className="text-[11px] font-semibold text-slate-500">
-                Leave empty if no detained students for this step.
-              </p>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
-              <button
-                onClick={closeDetainedFlow}
-                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={proceedWithDetainedRolls}
-                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-orange-600 shadow-lg shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
-              >
-                Proceed
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Detained Confirmation Modal */}
-      {detainedConfirmModal.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <Card className="w-full max-w-xl p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-indigo-100 bg-indigo-50/30 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-indigo-900">
-                  {detainedConfirmModal.title}
-                </h3>
-                <p className="text-xs font-bold text-indigo-600 mt-1">
-                  These detained students will stay in their current year.
-                </p>
-              </div>
-              <button
-                onClick={closeDetainedFlow}
-                className="p-2 hover:bg-indigo-100 rounded-xl text-indigo-400 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 bg-slate-50/50 max-h-[55vh] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-xl bg-white border border-slate-200 p-3">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Total</p>
-                  <p className="text-lg font-black text-slate-800">{detainedConfirmModal.candidates.length}</p>
-                </div>
-                <div className="rounded-xl bg-white border border-amber-200 p-3">
-                  <p className="text-[10px] text-amber-500 font-bold uppercase">Detained</p>
-                  <p className="text-lg font-black text-amber-700">{detainedConfirmModal.detainedStudents.length}</p>
-                </div>
-                <div className="rounded-xl bg-white border border-emerald-200 p-3">
-                  <p className="text-[10px] text-emerald-500 font-bold uppercase">
-                    {detainedConfirmModal.action === "cleanup3" ? "Will Be Cleared" : "Will Be Promoted"}
+        {/* Detained Roll Input Modal */}
+        {detainedInputModal.open && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="p-6 border-b border-orange-100 bg-orange-50/30 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-orange-900">
+                    {detainedInputModal.title}
+                  </h3>
+                  <p className="text-xs font-bold text-orange-600 mt-1">
+                    {detainedInputModal.message}
                   </p>
-                  <p className="text-lg font-black text-emerald-700">{detainedConfirmModal.processableStudents.length}</p>
                 </div>
+                <button
+                  onClick={closeDetainedFlow}
+                  className="p-2 hover:bg-orange-100 rounded-xl text-orange-400 transition-colors"
+                >
+                  <X size={20} />
+                </button>
               </div>
-              {detainedConfirmModal.duplicateCount > 0 && (
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Duplicate entries ignored: {detainedConfirmModal.duplicateCount}
-                </p>
-              )}
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="text-xs font-black text-slate-700 uppercase tracking-wide mb-3">
-                  Detained Students
-                </p>
-                {detainedConfirmModal.detainedStudents.length === 0 ? (
-                  <p className="text-sm font-semibold text-slate-500">No detained students entered.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {detainedConfirmModal.detainedStudents.map((std) => (
-                      <div key={std.id} className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-                        <span className="text-sm font-black text-amber-800">{std.name}</span>
-                        <span className="text-[11px] font-bold text-amber-700">{std.rollNo}</span>
-                      </div>
-                    ))}
+              <div className="p-6 space-y-4 bg-slate-50/50">
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">
+                    Students in this step:{" "}
+                    {detainedInputModal.candidates.length}
+                  </p>
+                  <textarea
+                    value={detainedRollInput}
+                    onChange={(e) => {
+                      setDetainedRollInput(e.target.value);
+                      if (
+                        detainedInputErrors.invalid.length ||
+                        detainedInputErrors.notFound.length
+                      ) {
+                        setDetainedInputErrors({ invalid: [], notFound: [] });
+                      }
+                    }}
+                    rows={4}
+                    placeholder="Enter detained roll numbers (comma or space separated)"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+                  />
+                </div>
+                {(detainedInputErrors.invalid.length > 0 ||
+                  detainedInputErrors.notFound.length > 0) && (
+                  <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-2">
+                    {detainedInputErrors.invalid.length > 0 && (
+                      <p className="text-[11px] font-bold text-red-700">
+                        Invalid roll numbers:{" "}
+                        {detainedInputErrors.invalid.join(", ")}
+                      </p>
+                    )}
+                    {detainedInputErrors.notFound.length > 0 && (
+                      <p className="text-[11px] font-bold text-red-700">
+                        Not found in this step:{" "}
+                        {detainedInputErrors.notFound.join(", ")}
+                      </p>
+                    )}
                   </div>
                 )}
-              </div>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
-              <button
-                onClick={closeDetainedFlow}
-                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeDetainedAction}
-                className={`flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-[1.02] active:scale-95 ${
-                  detainedConfirmModal.action === "cleanup3"
-                    ? "bg-red-600 shadow-lg shadow-red-200"
-                    : "bg-blue-600 shadow-lg shadow-blue-200"
-                }`}
-              >
-                {detainedConfirmModal.action === "cleanup3"
-                  ? "Clear 3rd Year Batch"
-                  : "Promote Students"}
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Semester Reset Confirmation Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-blue-100 bg-blue-50/30 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-black text-blue-900">
-                  Confirm Semester Reset
-                </h3>
-                <p className="text-xs font-bold text-blue-600 mt-1">
-                  Reset Feedback Status for Students
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Leave empty if no detained students for this step.
                 </p>
               </div>
-              <button
-                onClick={() => setShowResetModal(false)}
-                className="p-2 hover:bg-blue-100 rounded-xl text-blue-400 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-6 max-h-[50vh] overflow-y-auto bg-slate-50/50">
-              <div className="space-y-2">
-                {resetCandidates.map((std) => {
-                  const isExcluded = excludedFromReset.has(std.id);
-                  const nextSem = getSilentSemesterShiftTarget(std.targetClass);
-                  return (
-                    <div
-                      key={std.id}
-                      onClick={() => {
-                        const newSet = new Set(excludedFromReset);
-                        if (isExcluded) newSet.delete(std.id);
-                        else newSet.add(std.id);
-                        setExcludedFromReset(newSet);
-                      }}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                        isExcluded
-                          ? "bg-slate-100 border-slate-200 opacity-60"
-                          : "bg-white border-slate-200 hover:border-blue-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                            isExcluded
-                              ? "border-slate-300 bg-white text-slate-300"
-                              : "border-blue-400 bg-blue-500 text-white"
-                          }`}
-                        >
-                          {!isExcluded && <CheckCircle size={14} />}
-                          {isExcluded && <X size={14} />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className={`text-xs font-black truncate ${isExcluded ? "text-slate-400" : "text-slate-800"}`}>
-                            {std.name}
-                          </p>
-                          <p className="text-[10px] font-bold text-slate-400">
-                            {std.targetClass} → <span className="text-blue-600">{nextSem}</span>
-                          </p>
-                        </div>
-                      </div>
-                      {isExcluded && (
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-200 rounded-md">
-                          Skipped
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+              <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+                <button
+                  onClick={closeDetainedFlow}
+                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={proceedWithDetainedRolls}
+                  className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-orange-600 shadow-lg shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  Proceed
+                </button>
               </div>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
-              <button
-                onClick={() => setShowResetModal(false)}
-                className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={executeBulkReset}
-                className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 shadow-lg shadow-blue-200 transition-all hover:scale-[1.02] active:scale-95"
-              >
-                Confirm & Reset {resetCandidates.length - excludedFromReset.size} Students
-              </button>
-            </div>
-          </Card>
-        </div>
-      )}
+            </Card>
+          </div>
+        )}
 
-      {/* Delete Allotment Confirmation Modal */}
+        {/* Detained Confirmation Modal */}
+        {detainedConfirmModal.open && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="w-full max-w-xl p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="p-6 border-b border-indigo-100 bg-indigo-50/30 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-indigo-900">
+                    {detainedConfirmModal.title}
+                  </h3>
+                  <p className="text-xs font-bold text-indigo-600 mt-1">
+                    These detained students will stay in their current year.
+                  </p>
+                </div>
+                <button
+                  onClick={closeDetainedFlow}
+                  className="p-2 hover:bg-indigo-100 rounded-xl text-indigo-400 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4 bg-slate-50/50 max-h-[55vh] overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl bg-white border border-slate-200 p-3">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">
+                      Total
+                    </p>
+                    <p className="text-lg font-black text-slate-800">
+                      {detainedConfirmModal.candidates.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-amber-200 p-3">
+                    <p className="text-[10px] text-amber-500 font-bold uppercase">
+                      Detained
+                    </p>
+                    <p className="text-lg font-black text-amber-700">
+                      {detainedConfirmModal.detainedStudents.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-white border border-emerald-200 p-3">
+                    <p className="text-[10px] text-emerald-500 font-bold uppercase">
+                      {detainedConfirmModal.action === "cleanup3"
+                        ? "Will Be Cleared"
+                        : "Will Be Promoted"}
+                    </p>
+                    <p className="text-lg font-black text-emerald-700">
+                      {detainedConfirmModal.processableStudents.length}
+                    </p>
+                  </div>
+                </div>
+                {detainedConfirmModal.duplicateCount > 0 && (
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    Duplicate entries ignored:{" "}
+                    {detainedConfirmModal.duplicateCount}
+                  </p>
+                )}
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-black text-slate-700 uppercase tracking-wide mb-3">
+                    Detained Students
+                  </p>
+                  {detainedConfirmModal.detainedStudents.length === 0 ? (
+                    <p className="text-sm font-semibold text-slate-500">
+                      No detained students entered.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {detainedConfirmModal.detainedStudents.map((std) => (
+                        <div
+                          key={std.id}
+                          className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"
+                        >
+                          <span className="text-sm font-black text-amber-800">
+                            {std.name}
+                          </span>
+                          <span className="text-[11px] font-bold text-amber-700">
+                            {std.rollNo}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+                <button
+                  onClick={closeDetainedFlow}
+                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeDetainedAction}
+                  className={`flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-[1.02] active:scale-95 ${
+                    detainedConfirmModal.action === "cleanup3"
+                      ? "bg-red-600 shadow-lg shadow-red-200"
+                      : "bg-blue-600 shadow-lg shadow-blue-200"
+                  }`}
+                >
+                  {detainedConfirmModal.action === "cleanup3"
+                    ? "Clear 3rd Year Batch"
+                    : "Promote Students"}
+                </button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Semester Reset Confirmation Modal */}
+        {showResetModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+              <div className="p-6 border-b border-blue-100 bg-blue-50/30 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-blue-900">
+                    Confirm Semester Reset
+                  </h3>
+                  <p className="text-xs font-bold text-blue-600 mt-1">
+                    Reset Feedback Status for Students
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowResetModal(false)}
+                  className="p-2 hover:bg-blue-100 rounded-xl text-blue-400 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 max-h-[50vh] overflow-y-auto bg-slate-50/50">
+                <div className="space-y-2">
+                  {resetCandidates.map((std) => {
+                    const isExcluded = excludedFromReset.has(std.id);
+                    const nextSem = getSilentSemesterShiftTarget(
+                      std.targetClass,
+                    );
+                    return (
+                      <div
+                        key={std.id}
+                        onClick={() => {
+                          const newSet = new Set(excludedFromReset);
+                          if (isExcluded) newSet.delete(std.id);
+                          else newSet.add(std.id);
+                          setExcludedFromReset(newSet);
+                        }}
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
+                          isExcluded
+                            ? "bg-slate-100 border-slate-200 opacity-60"
+                            : "bg-white border-slate-200 hover:border-blue-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                              isExcluded
+                                ? "border-slate-300 bg-white text-slate-300"
+                                : "border-blue-400 bg-blue-500 text-white"
+                            }`}
+                          >
+                            {!isExcluded && <CheckCircle size={14} />}
+                            {isExcluded && <X size={14} />}
+                          </div>
+                          <div className="min-w-0">
+                            <p
+                              className={`text-xs font-black truncate ${isExcluded ? "text-slate-400" : "text-slate-800"}`}
+                            >
+                              {std.name}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400">
+                              {std.targetClass} →{" "}
+                              <span className="text-blue-600">{nextSem}</span>
+                            </p>
+                          </div>
+                        </div>
+                        {isExcluded && (
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-200 rounded-md">
+                            Skipped
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+                <button
+                  onClick={() => setShowResetModal(false)}
+                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeBulkReset}
+                  className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-blue-600 shadow-lg shadow-blue-200 transition-all hover:scale-[1.02] active:scale-95"
+                >
+                  Confirm & Reset{" "}
+                  {resetCandidates.length - excludedFromReset.size} Students
+                </button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Delete Allotment Confirmation Modal */}
         {allotmentToDelete && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
             <Card className="w-full max-w-md p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
               <div className="p-8 text-center">
                 <div className="mx-auto w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mb-6 ring-4 ring-red-50/50">
-                  <Trash2 className="text-red-500" size={32} strokeWidth={2.5} />
+                  <Trash2
+                    className="text-red-500"
+                    size={32}
+                    strokeWidth={2.5}
+                  />
                 </div>
                 <h3 className="text-xl font-black text-slate-800 tracking-tight">
                   Remove Allotment?
@@ -3196,103 +3305,106 @@ export default function HodDashboard({ user }) {
                   Report Configuration
                 </h3>
               </div>
-            <div className="p-6 md:p-8 flex flex-col gap-6 items-stretch justify-between">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-5 flex-1 w-full xl:w-auto items-end">
-                <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
-                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                    Academic Year
-                  </label>
-                  <input
-                    type="text"
-                    value={acadYear}
-                    onChange={(e) => setAcadYear(e.target.value)}
-                    className="input-app text-sm font-bold py-2.5 w-full"
-                    placeholder="e.g. 2024-25"
-                  />
-                </div>
-
-                <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
-                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                    Department
-                  </label>
-                  <CustomSelect
-                    value={reportDept}
-                    onChange={(val) => {
-                      setReportDept(val);
-                      setReportStaff("");
-                      setReportSubject("");
-                    }}
-                    options={[
-                      { value: "", label: "All Departments" },
-                      ...departmentsList.map((d) => ({
-                        value: d,
-                        label: d,
-                      })),
-                    ]}
-                    placeholder="Select Department"
-                  />
-                </div>
-                <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
-                  <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                    Faculty
-                  </label>
-                  <CustomSelect
-                    value={reportStaff}
-                    onChange={(val) => {
-                      setReportStaff(val);
-                      const nextSubjects = [
-                        ...new Set(
-                          [...feedbacks, ...exitForms]
-                            .filter((f) => f.staffName === val)
-                            .map((f) => f.subject),
-                        ),
-                      ];
-                      setReportSubject(
-                        nextSubjects.length > 0 ? nextSubjects[0] : "",
-                      );
-                    }}
-                    options={(reportDept
-                      ? allStaffList
-                          .filter((s) => s.dept === reportDept)
-                          .map((s) => s.name)
-                      : allStaffList.map((s) => s.name)
-                    ).map((s) => ({ value: s, label: s }))}
-                    placeholder="All Faculty"
-                  />
-                </div>
-                {reportStaff && (
-                  <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] animate-in fade-in duration-300 relative z-50">
+              <div className="p-6 md:p-8 flex flex-col gap-6 items-stretch justify-between">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-5 flex-1 w-full xl:w-auto items-end">
+                  <div className="w-full sm:w-auto flex-1 min-w-0 sm:min-w-[120px]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Subject
+                      Academic Year
                     </label>
-                    <CustomSelect
-                      value={reportSubject}
-                      onChange={(val) => setReportSubject(val)}
-                      options={staffSubjects.map((s) => ({
-                        value: s,
-                        label: s,
-                      }))}
-                      placeholder="All Subjects"
+                    <input
+                      type="text"
+                      value={acadYear}
+                      onChange={(e) => setAcadYear(e.target.value)}
+                      className="input-app text-sm font-bold py-2.5 w-full"
+                      placeholder="e.g. 2024-25"
                     />
                   </div>
-                )}
+
+                  <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                      Department
+                    </label>
+                    <CustomSelect
+                      value={reportDept}
+                      onChange={(val) => {
+                        setReportDept(val);
+                        setReportStaff("");
+                        setReportSubject("");
+                      }}
+                      options={[
+                        { value: "", label: "All Departments" },
+                        ...departmentsList.map((d) => ({
+                          value: d,
+                          label: d,
+                        })),
+                      ]}
+                      placeholder="Select Department"
+                    />
+                  </div>
+                  <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
+                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                      Faculty
+                    </label>
+                    <CustomSelect
+                      value={reportStaff}
+                      onChange={(val) => {
+                        setReportStaff(val);
+                        const nextSubjects = [
+                          ...new Set(
+                            [...feedbacks, ...exitForms]
+                              .filter((f) => f.staffName === val)
+                              .map((f) => f.subject),
+                          ),
+                        ];
+                        setReportSubject(
+                          nextSubjects.length > 0 ? nextSubjects[0] : "",
+                        );
+                      }}
+                      options={(reportDept
+                        ? allStaffList
+                            .filter((s) => s.dept === reportDept)
+                            .map((s) => s.name)
+                        : allStaffList.map((s) => s.name)
+                      ).map((s) => ({ value: s, label: s }))}
+                      placeholder="All Faculty"
+                    />
+                  </div>
+                  {reportStaff && (
+                    <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] animate-in fade-in duration-300 relative z-50">
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                        Subject
+                      </label>
+                      <CustomSelect
+                        value={reportSubject}
+                        onChange={(val) => setReportSubject(val)}
+                        options={staffSubjects.map((s) => ({
+                          value: s,
+                          label: s,
+                        }))}
+                        placeholder="All Subjects"
+                      />
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    if (!acadYear) {
+                      notifyError("Academic Year is required before printing.");
+                      return;
+                    }
+                    window.print();
+                  }}
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full lg:w-auto mt-2"
+                >
+                  <Printer size={18} strokeWidth={2.5} /> Print Report
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  if (!acadYear) {
-                    notifyError("Academic Year is required before printing.");
-                    return;
-                  }
-                  window.print();
-                }}
-                className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20 hover:from-indigo-700 hover:to-violet-700 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 uppercase tracking-widest text-sm transition-all active:scale-95 w-full lg:w-auto mt-2"
-              >
-                <Printer size={18} strokeWidth={2.5} /> Print Report
-              </button>
-            </div>
             </Card>
 
-            <div className="flex justify-center mb-6 mt-2 print:hidden print-hide" style={{ "@media print": { display: "none" } }}>
+            <div
+              className="flex justify-center mb-6 mt-2 print:hidden print-hide"
+              style={{ "@media print": { display: "none" } }}
+            >
               <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
                 <button
                   onClick={() => setReportMode("faculty")}
@@ -3309,77 +3421,79 @@ export default function HodDashboard({ user }) {
               </div>
             </div>
 
-            {(reportStaff && totalStudents > 0 && qCount > 0) ? (
+            {reportStaff && totalStudents > 0 && qCount > 0 ? (
               <>
                 {/* --- OVERALL RATING DONUT CHART (Hidden when printing) --- */}
                 {reportMode !== "institution" && (
-                <>
-                <Card className="p-8 border-slate-100 shadow-sm print:hidden">
-                  <div className="flex items-center justify-between mb-8">
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                        <PieChart size={24} /> Overall Feedback Distribution
-                      </h2>
-                      <p className="text-sm text-slate-500 mt-2">
-                        Rating distribution across {submittedStudents} submitted
-                        feedback{submittedStudents !== 1 ? "s" : ""}
-                        {totalStudentsInClass > 0
-                          ? ` out of ${totalStudentsInClass} students`
-                          : ""}{" "}
-                        and {activeQuestions.length} criteria
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-4xl font-black text-blue-600">
-                        {overallAverageOutOf5}
+                  <>
+                    <Card className="p-8 border-slate-100 shadow-sm print:hidden">
+                      <div className="flex items-center justify-between mb-8">
+                        <div>
+                          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                            <PieChart size={24} /> Overall Feedback Distribution
+                          </h2>
+                          <p className="text-sm text-slate-500 mt-2">
+                            Rating distribution across {submittedStudents}{" "}
+                            submitted feedback
+                            {submittedStudents !== 1 ? "s" : ""}
+                            {totalStudentsInClass > 0
+                              ? ` out of ${totalStudentsInClass} students`
+                              : ""}{" "}
+                            and {activeQuestions.length} criteria
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-4xl font-black text-blue-600">
+                            {overallAverageOutOf5}
+                          </div>
+                          <p className="text-sm text-slate-500 font-semibold">
+                            out of 5.0
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-500 font-semibold">
-                        out of 5.0
-                      </p>
-                    </div>
-                  </div>
-                  <DonutChart
-                    data={[
-                      { name: "Excellent (5)", value: colTotals[5] },
-                      { name: "Very Good (4)", value: colTotals[4] },
-                      { name: "Good (3)", value: colTotals[3] },
-                      { name: "Satisfactory (2)", value: colTotals[2] },
-                      { name: "Poor (1)", value: colTotals[1] },
-                    ]}
-                    colors={[
-                      "#22c55e",
-                      "#3b82f6",
-                      "#eab308",
-                      "#f97316",
-                      "#ef4444",
-                    ]}
-                    height={400}
-                  />
-                </Card>
+                      <DonutChart
+                        data={[
+                          { name: "Excellent (5)", value: colTotals[5] },
+                          { name: "Very Good (4)", value: colTotals[4] },
+                          { name: "Good (3)", value: colTotals[3] },
+                          { name: "Satisfactory (2)", value: colTotals[2] },
+                          { name: "Poor (1)", value: colTotals[1] },
+                        ]}
+                        colors={[
+                          "#22c55e",
+                          "#3b82f6",
+                          "#eab308",
+                          "#f97316",
+                          "#ef4444",
+                        ]}
+                        height={400}
+                      />
+                    </Card>
 
-                {/* --- QUESTION-WISE DONUT CHARTS (Hidden when printing) --- */}
-                <div className="mt-8 print:hidden">
-                  <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
-                    <BarChart size={24} /> Question-wise Breakdown
-                  </h2>
-                  <p className="text-sm text-slate-600 mb-6">
-                    Each donut chart shows the distribution of ratings for a
-                    specific criterion. Hover over segments to see exact counts.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
-                    {activeQuestions.map((q, idx) => (
-                      <div className="" key={idx}>
-                        <QuestionDonutChart
-                          questionNumber={idx + 1}
-                          questionText={q}
-                          scoreCounts={scoreCounts[idx]}
-                          totalResponses={totalStudents}
-                        />
+                    {/* --- QUESTION-WISE DONUT CHARTS (Hidden when printing) --- */}
+                    <div className="mt-8 print:hidden">
+                      <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
+                        <BarChart size={24} /> Question-wise Breakdown
+                      </h2>
+                      <p className="text-sm text-slate-600 mb-6">
+                        Each donut chart shows the distribution of ratings for a
+                        specific criterion. Hover over segments to see exact
+                        counts.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 gap-6">
+                        {activeQuestions.map((q, idx) => (
+                          <div className="" key={idx}>
+                            <QuestionDonutChart
+                              questionNumber={idx + 1}
+                              questionText={q}
+                              scoreCounts={scoreCounts[idx]}
+                              totalResponses={totalStudents}
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-                </>
+                    </div>
+                  </>
                 )}
 
                 {/* --- OFFICIAL MSBTE K15 TABLE (Visible in browser AND in print mode) --- */}
@@ -3436,19 +3550,25 @@ export default function HodDashboard({ user }) {
                             3 - Good
                           </th>
                           <th className="border border-black p-2 print:py-1 print:px-1 w-16">
-                            <span className="print:hidden">2 - Satisfactory</span>
+                            <span className="print:hidden">
+                              2 - Satisfactory
+                            </span>
                             <span className="hidden print:inline">2 - Sat</span>
                           </th>
                           <th className="border border-black p-2 print:py-1 print:px-1 w-16">
-                            <span className="print:hidden">1 - Not Satisfactory</span>
-                            <span className="hidden print:inline">1 - Not Sat</span>
+                            <span className="print:hidden">
+                              1 - Not Satisfactory
+                            </span>
+                            <span className="hidden print:inline">
+                              1 - Not Sat
+                            </span>
                           </th>
                         </tr>
                       </thead>
                       <tbody>
                         {FEEDBACK_QUESTIONS.map((q, idx) => (
                           <tr key={idx}>
-                          <td className="border border-black p-1.5 print:p-0.5 font-bold">
+                            <td className="border border-black p-1.5 print:p-0.5 font-bold">
                               {idx + 1}
                             </td>
                             <td className="border border-black p-1.5 print:p-0.5 text-left font-semibold">
