@@ -58,6 +58,23 @@ import {
 import { useNotify } from "../context/NotificationContext.jsx";
 // Removed hardcoded MSBTE import
 
+const getYearFromClassCode = (classCode) => {
+  const normalized = String(classCode || "")
+    .trim()
+    .toUpperCase();
+  if (!normalized) return null;
+
+  const legacyPattern = normalized.match(/^([1-3])Y/);
+  if (legacyPattern) return parseInt(legacyPattern[1], 10);
+
+  const semPattern = normalized.match(/([1-6])/);
+  if (!semPattern) return null;
+  const semNo = parseInt(semPattern[1], 10);
+  if (semNo <= 2) return 1;
+  if (semNo <= 4) return 2;
+  return 3;
+};
+
 export default function HodDashboard({ user }) {
   const { success, error: notifyError, warning } = useNotify();
   const [activeTab, setActiveTab] = useState("students");
@@ -844,8 +861,15 @@ export default function HodDashboard({ user }) {
   const studentsInClass = useMemo(() => {
     return allocation
       ? students.filter((s) => {
-          const matchClass =
+          let matchClass =
             s.targetClass === (allocation.targetClass || allocation.tClass);
+          if (!matchClass) {
+            const filterYear = getYearFromClassCode(allocation.targetClass || allocation.tClass);
+            const studentYear = getYearFromClassCode(s.targetClass);
+            if (filterYear !== null && filterYear === studentYear) {
+              matchClass = true;
+            }
+          }
           const matchDiv =
             allocation.division === "All"
               ? true
@@ -884,7 +908,16 @@ export default function HodDashboard({ user }) {
         s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
         s.prn?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
         s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase());
-      const matchClass = !filterClass || s.targetClass === filterClass;
+      
+      let matchClass = !filterClass || s.targetClass === filterClass;
+      if (filterClass && !matchClass) {
+        const filterYear = getYearFromClassCode(filterClass);
+        const studentYear = getYearFromClassCode(s.targetClass);
+        if (filterYear !== null && filterYear === studentYear) {
+          matchClass = true;
+        }
+      }
+
       const normalizedStudentDiv = String(s.division || "A")
         .trim()
         .toUpperCase();
@@ -1281,23 +1314,6 @@ export default function HodDashboard({ user }) {
       targetClass: "",
       candidates: studentsToDelete,
     });
-  };
-
-  const getYearFromClassCode = (classCode) => {
-    const normalized = String(classCode || "")
-      .trim()
-      .toUpperCase();
-    if (!normalized) return null;
-
-    const legacyPattern = normalized.match(/^([1-3])Y/);
-    if (legacyPattern) return parseInt(legacyPattern[1], 10);
-
-    const semPattern = normalized.match(/([1-6])/);
-    if (!semPattern) return null;
-    const semNo = parseInt(semPattern[1], 10);
-    if (semNo <= 2) return 1;
-    if (semNo <= 4) return 2;
-    return 3;
   };
 
   const getSilentSemesterShiftTarget = (classCode) => {
