@@ -1363,6 +1363,11 @@ export default function HodDashboard({ user }) {
       students.filter((s) => getYearFromClassCode(s.targetClass) === 2).length,
     [students],
   );
+  const firstYearStudentsCount = useMemo(
+    () =>
+      students.filter((s) => getYearFromClassCode(s.targetClass) === 1).length,
+    [students],
+  );
   const cleanupLockMessage = workflowProgress.promote23Done
     ? "Step 1 locked: already completed for current cycle."
     : "";
@@ -1807,7 +1812,7 @@ export default function HodDashboard({ user }) {
                       numbers so those students stay in the same year.
                     </p>
                   </div>
-                  {!studentsLoaded ? (
+                  {!studentsLoaded && (
                     <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 flex items-center justify-between">
                       <p className="text-sm font-bold text-slate-600">
                         Loading lifecycle status…
@@ -1817,78 +1822,45 @@ export default function HodDashboard({ user }) {
                         className="text-slate-400 animate-spin"
                       />
                     </div>
-                  ) : (
-                    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                          Step {activeLifecycleStep} of 3
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              activeLifecycleStep === 1
-                                ? "bg-red-500"
-                                : workflowProgress.cleanup3Done ||
-                                    thirdYearStudentsCount === 0
-                                  ? "bg-emerald-500"
-                                  : "bg-slate-300"
-                            }`}
-                          />
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              activeLifecycleStep === 2
-                                ? "bg-orange-500"
-                                : workflowProgress.promote23Done
-                                  ? "bg-emerald-500"
-                                  : "bg-slate-300"
-                            }`}
-                          />
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              activeLifecycleStep === 3
-                                ? "bg-indigo-500"
-                                : "bg-slate-300"
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    </div>
                   )}
 
-                  {studentsLoaded && activeLifecycleStep === 1 && (
+                  {studentsLoaded && (
                     <div className="rounded-2xl border border-red-100 bg-red-50/40 p-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                           <Trash2 size={16} /> Step 1 - Cleanup 3rd Year
                         </h4>
-                        <span
-                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                            workflowProgress.cleanup3Done
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {workflowProgress.cleanup3Done
-                            ? "Completed"
-                            : "Ready"}
-                        </span>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-500">
-                        Detected: {thirdYearStudentsCount} student(s) in 3rd
-                        year
-                      </p>
-                      <p className="text-xs font-semibold text-red-700/90">
-                        Clear outgoing 3rd year students. Enter detained roll
-                        numbers to keep repeaters.
-                      </p>
-                      <button
-                        onClick={handleBulkDeleteStudents}
-                        disabled={step1Locked}
-                        className="w-full px-5 h-12 bg-red-500 hover:bg-red-600 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
-                      >
-                        Clear Outgoing 3rd Year
-                      </button>
-                      {cleanupLockMessage && (
+                      {thirdYearStudentsCount > 0 && (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100/60 text-red-700 rounded-lg border border-red-200/60 w-fit">
+                          <Users size={12} strokeWidth={2.5} />
+                          <span className="text-[10px] font-black uppercase tracking-wider">
+                            Detected: {thirdYearStudentsCount} student{thirdYearStudentsCount === 1 ? '' : 's'} in 3rd year
+                          </span>
+                        </div>
+                      )}
+                      
+                      {thirdYearStudentsCount === 0 ? (
+                        <div className="bg-white/60 p-4 rounded-xl border border-red-100/50 text-center shadow-sm">
+                          <p className="text-sm font-bold text-red-600/80">No 3rd year students found. Step auto-completed.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-red-700/90">
+                            Clear outgoing 3rd year students. Enter detained roll
+                            numbers to keep repeaters.
+                          </p>
+                          <button
+                            onClick={handleBulkDeleteStudents}
+                            disabled={step1Locked}
+                            className="w-full px-5 h-12 bg-red-500 hover:bg-red-600 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                          >
+                            Clear Outgoing 3rd Year
+                          </button>
+                        </>
+                      )}
+                      
+                      {cleanupLockMessage && thirdYearStudentsCount > 0 && (
                         <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
                           {cleanupLockMessage}
                         </p>
@@ -1896,46 +1868,46 @@ export default function HodDashboard({ user }) {
                     </div>
                   )}
 
-                  {studentsLoaded && activeLifecycleStep === 2 && (
+                  {studentsLoaded && (
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
                           <ArrowUpCircle size={16} /> Step 2 - Promote 2nd to
                           3rd
                         </h4>
-                        <span
-                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                            workflowProgress.promote23Done
-                              ? "bg-emerald-100 text-emerald-700"
-                              : step2Locked
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {workflowProgress.promote23Done
-                            ? "Completed"
-                            : step2Locked
-                              ? "Locked"
-                              : "Ready"}
-                        </span>
                       </div>
-                      <p className="text-xs font-semibold text-orange-700/90">
-                        Promotes all eligible 2nd-year students. Detained roll
-                        numbers stay in 2nd year.
-                      </p>
-                      <p className="text-[11px] font-bold text-slate-500">
-                        Detected: {secondYearStudentsCount} student(s) in 2nd
-                        year
-                      </p>
-                      <button
-                        onClick={handleStep23Promotion}
-                        disabled={step2Locked}
-                        className="w-full px-5 h-12 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-orange-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
-                      >
-                        Promote 2nd to 3rd
-                      </button>
+                      
+                      {secondYearStudentsCount > 0 && (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100/60 text-orange-700 rounded-lg border border-orange-200/60 w-fit">
+                          <Users size={12} strokeWidth={2.5} />
+                          <span className="text-[10px] font-black uppercase tracking-wider">
+                            Detected: {secondYearStudentsCount} student{secondYearStudentsCount === 1 ? '' : 's'} in 2nd year
+                          </span>
+                        </div>
+                      )}
+                      
+                      {secondYearStudentsCount === 0 ? (
+                        <div className="bg-white/60 p-4 rounded-xl border border-orange-100/50 text-center shadow-sm">
+                          <p className="text-sm font-bold text-orange-600/80">No 2nd year students found. Step auto-completed.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-orange-700/90">
+                            Promotes all eligible 2nd-year students. Detained roll
+                            numbers stay in 2nd year.
+                          </p>
+                          <button
+                            onClick={handleStep23Promotion}
+                            disabled={step2Locked}
+                            className="w-full px-5 h-12 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-orange-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                          >
+                            Promote 2nd to 3rd
+                          </button>
+                        </>
+                      )}
+                      
                       {thirdYearStudentsCount > 0 &&
-                        !workflowProgress.cleanup3Done && (
+                        !workflowProgress.cleanup3Done && secondYearStudentsCount > 0 && (
                           <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
                             Step 2 locked until Step 1 is completed.
                           </p>
@@ -1943,35 +1915,45 @@ export default function HodDashboard({ user }) {
                     </div>
                   )}
 
-                  {studentsLoaded && activeLifecycleStep === 3 && (
+                  {studentsLoaded && (
                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
                           <ArrowUpCircle size={16} /> Step 3 - Promote 1st to
                           2nd
                         </h4>
-                        <span
-                          className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                            step3Locked
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {step3Locked ? "Locked" : "Ready"}
-                        </span>
                       </div>
-                      <p className="text-xs font-semibold text-indigo-700/90">
-                        Promotes all eligible 1st-year students. Detained roll
-                        numbers stay in 1st year.
-                      </p>
-                      <button
-                        onClick={handleStep12Promotion}
-                        disabled={step3Locked}
-                        className="w-full px-5 h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-indigo-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
-                      >
-                        Promote 1st to 2nd
-                      </button>
-                      {!workflowProgress.promote23Done && (
+                      
+                      {firstYearStudentsCount > 0 && (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100/60 text-indigo-700 rounded-lg border border-indigo-200/60 w-fit">
+                          <Users size={12} strokeWidth={2.5} />
+                          <span className="text-[10px] font-black uppercase tracking-wider">
+                            Detected: {firstYearStudentsCount} student{firstYearStudentsCount === 1 ? '' : 's'} in 1st year
+                          </span>
+                        </div>
+                      )}
+                      
+                      {firstYearStudentsCount === 0 ? (
+                        <div className="bg-white/60 p-4 rounded-xl border border-indigo-100/50 text-center shadow-sm">
+                          <p className="text-sm font-bold text-indigo-600/80">No 1st year students found. Step completed.</p>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs font-semibold text-indigo-700/90">
+                            Promotes all eligible 1st-year students. Detained roll
+                            numbers stay in 1st year.
+                          </p>
+                          <button
+                            onClick={handleStep12Promotion}
+                            disabled={step3Locked}
+                            className="w-full px-5 h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-sm uppercase tracking-widest transition-all shadow-lg shadow-indigo-100 active:scale-95 disabled:bg-slate-300 disabled:hover:bg-slate-300 disabled:shadow-none disabled:text-slate-600"
+                          >
+                            Promote 1st to 2nd
+                          </button>
+                        </>
+                      )}
+                      
+                      {!workflowProgress.promote23Done && firstYearStudentsCount > 0 && (
                         <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
                           Step 3 locked until Step 2 is completed.
                         </p>
