@@ -70,7 +70,6 @@ export default function Login({
         if (userData.role === "student") {
           warning("Students must sign in through the Student Portal.");
           await signOut(auth);
-          setLoading(false);
           return;
         }
 
@@ -79,7 +78,6 @@ export default function Login({
             "This account has been deactivated. Contact the administrator.",
           );
           await signOut(auth);
-          setLoading(false);
           return;
         }
 
@@ -91,8 +89,9 @@ export default function Login({
     } catch (error) {
       console.error(error);
       notifyError("Invalid email or password. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

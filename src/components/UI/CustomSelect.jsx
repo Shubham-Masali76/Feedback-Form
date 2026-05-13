@@ -91,11 +91,11 @@ export default function CustomSelect({
 
   const currentTheme = isDark
     ? "bg-white/10 text-white border-white/20 hover:bg-white/20 focus:ring-indigo-400"
-    : "bg-white text-slate-800 border-slate-200 hover:border-slate-300 focus:border-indigo-400";
+    : "bg-white text-slate-800 border-slate-300 hover:border-indigo-300 focus:border-indigo-400";
 
   const dropdownTheme = isDark
     ? "bg-slate-800 border-slate-700 shadow-xl shadow-black/50"
-    : "bg-white border-slate-100 shadow-xl shadow-slate-200";
+    : "bg-white border-slate-300 shadow-xl shadow-slate-200";
 
   return (
     <div className={`relative w-full ${className}`} ref={containerRef}>

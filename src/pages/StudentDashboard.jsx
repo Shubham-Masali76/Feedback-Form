@@ -22,6 +22,7 @@ import {
   where,
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   arrayUnion,
 } from "firebase/firestore";
@@ -100,35 +101,38 @@ export default function StudentDashboard({ user }) {
 
   useEffect(() => {
     const fetchSystemStatusAndData = async () => {
-      if (!user?.email || !user?.targetClass || !user?.dept) {
-        console.warn("User data incomplete, skipping fetch");
+      const targetClass = user?.targetClass || user?.tClass;
+      if (!user?.email || !targetClass || !user?.dept) {
+        console.warn("User data incomplete, skipping fetch", {
+          email: user?.email,
+          targetClass: targetClass,
+          dept: user?.dept
+        });
+        setLoading(false);
         return;
       }
       try {
-        const settingsSnap = await getDoc(doc(db, "Settings", "Global"));
-        if (!settingsSnap.exists()) {
-          console.warn("Global settings not found");
-          return;
-        }
+        const globalSettingsSnap = await getDoc(doc(db, "Settings", "Global"));
+        const deptSettingsSnap = await getDoc(doc(db, "Settings", `Dept_${user.dept}`));
 
         const autoYear = getAutoAcadYear();
-        const autoSem = getSemLabel(user?.targetClass || "");
+        const autoSem = getSemLabel(targetClass || "");
 
         setCurrentAcadYear(autoYear);
         setCurrentSemester(autoSem);
 
-        if (
-          !settingsSnap.exists() ||
-          settingsSnap.data().studentPortalOpen !== true
-        ) {
+        // Check if student portal is open for this specific department
+        const isStudentPortalOpen = deptSettingsSnap.exists() && deptSettingsSnap.data().studentPortalOpen === true;
+
+        if (!isStudentPortalOpen) {
           setIsSystemLocked(true);
           return;
         }
 
         setIsSystemLocked(false);
 
-        // Fetch Institution Portal Status
-        const instOpen = settingsSnap.data().institutionPortalOpen === true;
+        // Fetch Institution Portal Status (remains global)
+        const instOpen = globalSettingsSnap.exists() && globalSettingsSnap.data().institutionPortalOpen === true;
         setIsInstPortalOpen(instOpen);
 
         const q = query(
@@ -223,7 +227,9 @@ export default function StudentDashboard({ user }) {
           localTrackedStaff = JSON.parse(localStorage.getItem(localStaffKey) || "[]");
           localTrackedExit = JSON.parse(localStorage.getItem(localExitKey) || "[]");
           localTrackedInst = localStorage.getItem(localInstKey) === "true";
-        } catch (e) {}
+        } catch {
+          // Ignore local storage errors
+        }
 
         // Combine DB and Local tracking
         const mergedStaff = Array.from(new Set([...studentTrackedStaff, ...localTrackedStaff]));
@@ -327,7 +333,7 @@ export default function StudentDashboard({ user }) {
     };
 
     fetchSystemStatusAndData();
-  }, [user.dept, user.email, user.targetClass, getYearLevel]);
+  }, [user.dept, user.email, user.targetClass, user.id, user?.tClass, getYearLevel]);
 
   const handleRatingChange = (questionIndex, value) => {
     setRatings((prev) => ({ ...prev, [questionIndex]: value }));
@@ -381,7 +387,9 @@ export default function StudentDashboard({ user }) {
       let totalScore = 0;
       Object.values(ratings).forEach((val) => (totalScore += parseInt(val)));
 
-      await addDoc(collection(db, "Feedbacks"), {
+      const customDocId = `${user.rollNo}_${selectedAllocation}`;
+      await setDoc(doc(db, "Feedbacks", customDocId), {
+        studentRollNo: user.rollNo,
         studentName: user.name,
         studentEmail: user.email, // Tracking for single response
         allocationId: selectedAllocation,
@@ -419,7 +427,9 @@ export default function StudentDashboard({ user }) {
         try {
           const localStaffKey = `staff_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
           localStorage.setItem(localStaffKey, JSON.stringify(newSubmittedReviews));
-        } catch (e) {}
+        } catch {
+          // Ignore
+        }
       }
 
       setSelectedAllocation("");
@@ -499,7 +509,9 @@ export default function StudentDashboard({ user }) {
         try {
           const localExitKey = `exit_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
           localStorage.setItem(localExitKey, JSON.stringify(newSubmittedExitSurveys));
-        } catch (e) {}
+        } catch {
+          // Ignore
+        }
       }
 
       setExitRatings({});
@@ -574,7 +586,9 @@ export default function StudentDashboard({ user }) {
         try {
           const localInstKey = `inst_fb_${user.id}_${currentAcadYear}`;
           localStorage.setItem(localInstKey, "true");
-        } catch (e) {}
+        } catch {
+          // Ignore
+        }
       }
 
       setInstRatings({});
@@ -952,7 +966,7 @@ export default function StudentDashboard({ user }) {
                     INSTITUTION_QUESTIONS.map((q, idx) => (
                       <fieldset
                         key={idx}
-                        className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-amber-100/80 transition-all hover:shadow-md"
+                        className="rounded-2xl border-2 border-slate-300 bg-white p-5 shadow-sm ring-1 ring-amber-100/80 transition-all hover:shadow-md hover:border-amber-300"
                       >
                         <legend className="sr-only">Question {idx + 1}</legend>
                         <p className="text-sm font-medium leading-relaxed text-slate-800 mb-5">
@@ -1094,7 +1108,7 @@ export default function StudentDashboard({ user }) {
                         FEEDBACK_QUESTIONS.map((q, idx) => (
                           <fieldset
                             key={idx}
-                            className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-slate-100/80"
+                            className="rounded-2xl border-2 border-slate-300 bg-white p-5 shadow-sm ring-1 ring-slate-100/80 hover:border-blue-300 transition-colors"
                           >
                             <legend className="sr-only">
                               Question {idx + 1}
@@ -1212,7 +1226,7 @@ export default function StudentDashboard({ user }) {
                         exitForm.questions.map((q, idx) => (
                           <fieldset
                             key={idx}
-                            className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm ring-1 ring-emerald-100/80"
+                            className="rounded-2xl border-2 border-slate-300 bg-white p-5 shadow-sm ring-1 ring-emerald-100/80 hover:border-emerald-300 transition-colors"
                           >
                             <legend className="sr-only">
                               Question {idx + 1}

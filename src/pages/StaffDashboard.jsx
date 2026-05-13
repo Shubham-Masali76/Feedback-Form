@@ -66,10 +66,10 @@ export default function StaffDashboard({ user }) {
   useEffect(() => {
     const fetchStaffData = async () => {
       try {
-        // Gate staff analytics behind a global toggle.
-        const settingsSnap = await getDoc(doc(db, "Settings", "Global"));
+        // Gate staff analytics behind a department-specific toggle.
+        const deptSettingsSnap = await getDoc(doc(db, "Settings", `Dept_${user.dept}`));
         const staffOpen =
-          settingsSnap.exists() && settingsSnap.data().staffPortalOpen === true;
+          deptSettingsSnap.exists() && deptSettingsSnap.data().staffPortalOpen === true;
         setIsStaffPortalOpen(staffOpen);
 
         const mapSnap = await getDoc(doc(db, "Settings", "SchemeMapping"));
@@ -214,32 +214,43 @@ export default function StaffDashboard({ user }) {
       : [];
 
   if (totalResponses > 0) {
-    let totalScoreSum = 0;
+    let totalPointsAccumulated = 0;
+    let totalQuestionsCounted = 0;
 
     currentFeedbacks.forEach((feedback) => {
-      // Calculate sum for each specific question
+      if (!feedback.scores) return;
+
       Object.keys(feedback.scores).forEach((qIndex) => {
         const rating = parseInt(feedback.scores[qIndex]);
-        if (questionAverages[qIndex] !== undefined) {
-          questionAverages[qIndex] += rating;
-        }
-        // Track rating counts
-        if (scoreCounts[qIndex] && scoreCounts[qIndex][rating] !== undefined) {
-          scoreCounts[qIndex][rating]++;
+        if (isNaN(rating)) return;
+
+        // Use numeric index to ensure array compatibility
+        const idx = parseInt(qIndex);
+
+        if (idx >= 0 && idx < qCount) {
+          questionAverages[idx] += rating;
+          totalPointsAccumulated += rating;
+          totalQuestionsCounted++;
+
+          // Track rating counts for charts
+          if (scoreCounts[idx] && scoreCounts[idx][rating] !== undefined) {
+            scoreCounts[idx][rating]++;
+          }
         }
       });
-      // Add to grand total
-      totalScoreSum += feedback.totalScore;
     });
 
-    // Calculate Final Averages
+    // Calculate Final Averages per question
     for (let i = 0; i < qCount; i++) {
-      questionAverages[i] = Math.round(questionAverages[i] / totalResponses);
+      questionAverages[i] =
+        totalResponses > 0 ? (questionAverages[i] / totalResponses).toFixed(1) : "0.0";
     }
-    // Max possible score per student is qCount questions * 5 points
-    // We want the overall average out of 5
+
+    // Overall Average out of 5.0
     overallAverage =
-      qCount > 0 ? Math.round(totalScoreSum / totalResponses / qCount) : "0";
+      totalQuestionsCounted > 0
+        ? (totalPointsAccumulated / totalQuestionsCounted).toFixed(1)
+        : "0.0";
   }
 
   if (loading)
@@ -441,7 +452,7 @@ export default function StaffDashboard({ user }) {
                         </span>
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
+                    <div className="rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
                       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
                         Responses received
                       </p>
@@ -513,35 +524,35 @@ export default function StaffDashboard({ user }) {
                             {
                               name: "Excellent (5)",
                               value: Object.values(scoreCounts).reduce(
-                                (sum, counts) => sum + counts[5],
+                                (sum, counts) => sum + (counts[5] || 0),
                                 0,
                               ),
                             },
                             {
                               name: "Very Good (4)",
                               value: Object.values(scoreCounts).reduce(
-                                (sum, counts) => sum + counts[4],
+                                (sum, counts) => sum + (counts[4] || 0),
                                 0,
                               ),
                             },
                             {
                               name: "Good (3)",
                               value: Object.values(scoreCounts).reduce(
-                                (sum, counts) => sum + counts[3],
+                                (sum, counts) => sum + (counts[3] || 0),
                                 0,
                               ),
                             },
                             {
                               name: "Satisfactory (2)",
                               value: Object.values(scoreCounts).reduce(
-                                (sum, counts) => sum + counts[2],
+                                (sum, counts) => sum + (counts[2] || 0),
                                 0,
                               ),
                             },
                             {
                               name: "Poor (1)",
                               value: Object.values(scoreCounts).reduce(
-                                (sum, counts) => sum + counts[1],
+                                (sum, counts) => sum + (counts[1] || 0),
                                 0,
                               ),
                             },
@@ -660,6 +671,10 @@ function CourseExitBuilder({
     ? allocations.filter((a) => classKey(a) === selectedBuilderClass)
     : [];
 
+  const [originalQuestions, setOriginalQuestions] = useState([]);
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
+  const [modifiedIndices, setModifiedIndices] = useState([]);
+
   // Load existing form data when subject changes
   useEffect(() => {
     const existing = selectedBuilderSubject
@@ -673,6 +688,7 @@ function CourseExitBuilder({
         existing && existing.questions ? existing.questions : [];
       const newIsOpen = !!(existing && existing.isOpen);
       setQuestions(newQuestions);
+      setOriginalQuestions([...newQuestions]);
       setIsFormOpen(newIsOpen);
     }, 0);
     return () => clearTimeout(timer);
@@ -688,10 +704,104 @@ function CourseExitBuilder({
     setQuestions(newQs);
   };
 
-  const handleRemoveQuestion = (index) => {
+  const [questionToDelete, setQuestionToDelete] = useState(null);
+
+  const handleRemoveQuestion = async (index) => {
+    // If no responses exist, delete immediately. 
+    // If responses exist, show confirmation first.
+    const existing = selectedBuilderSubject ? exitForms[selectedBuilderSubject] : null;
+    
+    // Check if any responses exist for this form
+    let hasResponses = false;
+    if (selectedBuilderSubject && existing) {
+      const alloc = allocations.find(a => subjectClassValue(a) === selectedBuilderSubject);
+      if (alloc) {
+        const q = query(
+          collection(db, "CourseExitResponses"),
+          where("staffName", "==", user.name),
+          where("subject", "==", alloc.subject),
+          where("targetClass", "==", classKey(alloc))
+        );
+        const snap = await getDocs(q);
+        hasResponses = !snap.empty;
+      }
+    }
+
+    if (hasResponses) {
+      setQuestionToDelete(index);
+    } else {
+      confirmRemoveQuestion(index);
+    }
+  };
+
+  const confirmRemoveQuestion = async (index) => {
     const newQs = [...questions];
     newQs.splice(index, 1);
     setQuestions(newQs);
+    setOriginalQuestions(newQs); // Sync original to prevent false change detection on save
+    setQuestionToDelete(null);
+
+    // If this is an existing form, update responses automatically to remove that index
+    if (selectedBuilderSubject && exitForms[selectedBuilderSubject]) {
+      try {
+        const alloc = allocations.find(
+          (a) => subjectClassValue(a) === selectedBuilderSubject,
+        );
+        if (!alloc) return;
+
+        // Query all responses for this specific subject/class/staff
+        const q = query(
+          collection(db, "CourseExitResponses"),
+          where("staffName", "==", user.name),
+          where("subject", "==", alloc.subject),
+          where("targetClass", "==", classKey(alloc)),
+        );
+
+        const snap = await getDocs(q);
+        if (snap.empty) return;
+
+        const batch = writeBatch(db);
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.scores) {
+            const newScores = {};
+            let newTotal = 0;
+            let count = 0;
+
+            // Shift indices down for all questions after the deleted one
+            Object.keys(data.scores).forEach((key) => {
+              const k = parseInt(key);
+              if (k < index) {
+                newScores[k] = data.scores[k];
+                newTotal += parseInt(data.scores[k]);
+                count++;
+              } else if (k > index) {
+                newScores[k - 1] = data.scores[k];
+                newTotal += parseInt(data.scores[k]);
+                count++;
+              }
+            });
+
+            if (count === 0) {
+              // No ratings left for this response, delete it entirely
+              batch.delete(doc(db, "CourseExitResponses", d.id));
+            } else {
+              batch.update(doc(db, "CourseExitResponses", d.id), {
+                scores: newScores,
+                totalScore: newTotal,
+              });
+            }
+          } else {
+            // No scores field found, delete it to clean up
+            batch.delete(doc(db, "CourseExitResponses", d.id));
+          }
+        });
+
+        await batch.commit();
+      } catch (err) {
+        console.error("Failed to auto-update responses after question deletion:", err);
+      }
+    }
   };
 
   const handleClearAllQuestions = () => {
@@ -732,12 +842,29 @@ function CourseExitBuilder({
       };
 
       await setDoc(doc(db, "CourseExitForms", formDocId), payload);
+
+      // ALSO: Delete all responses for this specific form entirely
+      const q = query(
+        collection(db, "CourseExitResponses"),
+        where("staffName", "==", user.name),
+        where("subject", "==", alloc.subject),
+        where("targetClass", "==", targetClass),
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const batch = writeBatch(db);
+        snap.docs.forEach((d) => {
+          batch.delete(doc(db, "CourseExitResponses", d.id));
+        });
+        await batch.commit();
+      }
+
       setExitForms((prev) => ({
         ...prev,
         [formKey]: { id: formDocId, ...payload },
       }));
       setQuestions([]);
-      notify.success("All questions cleared and saved.");
+      notify.success("All questions and existing response data cleared.");
     } catch (e) {
       console.error(e);
       notify.notifyError("Failed to clear questions.");
@@ -746,29 +873,30 @@ function CourseExitBuilder({
     setIsSaving(false);
   };
 
+  const [showGenericSaveModal, setShowGenericSaveModal] = useState(false);
+
   const handleSaveForm = async () => {
     if (!selectedBuilderSubject) {
       notify.warning("Please select a subject first.");
       return;
     }
-    const alloc = allocations.find(
-      (a) => subjectClassValue(a) === selectedBuilderSubject,
-    );
-    if (!alloc) return;
+    setShowGenericSaveModal(true);
+  };
 
-    // Filter out empty questions
-    const validQuestions = questions
-      .map((q) => q.trim())
-      .filter((q) => q.length > 0);
-    if (validQuestions.length === 0) {
-      notify.warning("Please add at least one valid question.");
-      return;
-    }
-
+  const confirmGenericSave = async () => {
+    setShowGenericSaveModal(false);
     setIsSaving(true);
     try {
+      const alloc = allocations.find(
+        (a) => subjectClassValue(a) === selectedBuilderSubject,
+      );
+      if (!alloc) return;
+
       const formKey = subjectClassValue(alloc);
       const targetClass = classKey(alloc);
+      const validQuestions = questions
+        .map((q) => q.trim())
+        .filter((q) => q.length > 0);
 
       const formDocId =
         exitForms[formKey]?.id ||
@@ -780,7 +908,7 @@ function CourseExitBuilder({
         subject: alloc.subject,
         targetClass: targetClass,
         questions: validQuestions,
-        isOpen: isFormOpen,
+        isOpen: validQuestions.length > 0 ? isFormOpen : false,
         updatedAt: serverTimestamp(),
       };
 
@@ -916,7 +1044,7 @@ function CourseExitBuilder({
 
             {selectedBuilderSubject && (
               <div className="space-y-5 border-t border-slate-200/80 bg-white px-5 py-5">
-                <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
+                <div className="rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500">
                       Portal Controls
@@ -1009,7 +1137,7 @@ function CourseExitBuilder({
                 <Button
                   variant="ghost"
                   onClick={handleClearAllQuestions}
-                  disabled={questions.length === 0}
+                  disabled={!selectedBuilderSubject}
                   className="bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-red-200/50 shrink-0 self-start sm:self-auto"
                 >
                   <Trash2 size={16} strokeWidth={2.5} /> Clear All
@@ -1091,15 +1219,53 @@ function CourseExitBuilder({
           )}
         </div>
       </div>
+      {showGenericSaveModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-300">
+            <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+              <Save className="text-indigo-500" size={20} />
+              Save Survey Changes?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              Please double-check your questions for any typos or mistakes.{" "}
+              <span className="font-bold text-amber-600">
+                Modifying questions after students have already started
+                responding
+              </span>{" "}
+              can make your dashboard data look incorrect.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowGenericSaveModal(false)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Go back
+              </button>
+              <button
+                type="button"
+                onClick={confirmGenericSave}
+                className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+              >
+                Confirm & Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showClearAllModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-2xl">
             <h3 className="text-lg font-extrabold text-slate-900">
               Clear all questions?
             </h3>
             <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-              This will remove all questions from this survey and save
-              immediately.
+              This will remove all questions from this survey and{" "}
+              <span className="font-bold text-red-600">
+                permanently delete all existing student responses
+              </span>{" "}
+              for this specific subject.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -1115,6 +1281,40 @@ function CourseExitBuilder({
                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
               >
                 Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {questionToDelete !== null && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl border-2 border-slate-300 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-extrabold text-slate-900">
+              Delete this question?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              Deleting this question will{" "}
+              <span className="font-bold text-red-600">
+                remove its ratings from all existing student responses
+              </span>{" "}
+              for this subject. If this is the only question, the entire
+              response will be deleted.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setQuestionToDelete(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmRemoveQuestion(questionToDelete)}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+              >
+                Delete Question
               </button>
             </div>
           </div>

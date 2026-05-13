@@ -92,9 +92,10 @@
   .splash-bg {
     background: linear-gradient(
       135deg,
-      rgb(15 23 42) 0%,
-      rgb(30 58 138) 42%,
-      rgb(49 46 129) 100%
+      rgb(2 6 23) 0%,
+      rgb(15 23 42) 38%,
+      rgb(23 37 84) 72%,
+      rgb(30 27 75) 100%
     );
   }
   .bg-app-shell {
@@ -171,10 +172,10 @@
 
 @layer components {
   .input-app {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15;
+    @apply w-full rounded-xl border-2 border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-[3px] focus:ring-blue-500/15;
   }
   .select-app {
-    @apply w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white bg-no-repeat px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-800 shadow-sm transition-all duration-200 hover:border-blue-300 hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 active:scale-[0.98];
+    @apply w-full cursor-pointer appearance-none rounded-xl border-2 border-slate-300 bg-white bg-no-repeat px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-800 shadow-sm transition-all duration-200 hover:border-blue-300 hover:bg-slate-50 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/20 active:scale-[0.98];
     background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-position: right 0.75rem center;
     background-size: 1.25em 1.25em;
@@ -203,8 +204,13 @@
   .print-hide {
     display: none !important;
   }
-  body, .bg-app-shell {
+  html, body, .bg-app-shell {
     background: white !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   /* Normalize page margins and prevent shadow rendering */
   @page {

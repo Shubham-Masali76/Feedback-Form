@@ -10,5 +10,17 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    watch: {
+      ignored: [
+        '**/src/utils/**',
+        '**/src/hooks/**',
+        '**/src/components/HodDashboard/**',
+        '**/src/components/AdminDashboard/**',
+        '**/src/components/StudentDashboard/**'
+      ],
+      usePolling: false,
+    },
+  },
   base: '/feedback/',
 })

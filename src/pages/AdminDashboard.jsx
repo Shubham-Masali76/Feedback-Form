@@ -178,7 +178,9 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (reportSubject) {
-      const fbMatch = [...globalFeedbacks, ...globalExitForms].find((f) => f.subject === reportSubject && f.semester);
+      const fbMatch = [...globalFeedbacks, ...globalExitForms].find(
+        (f) => f.subject === reportSubject && f.semester,
+      );
       if (fbMatch && fbMatch.semester) {
         let val = fbMatch.semester;
         if (!val) {
@@ -190,14 +192,15 @@ export default function AdminDashboard() {
         let roman = val;
         if (match) {
           const num = parseInt(match[0]);
-          if (num >= 1 && num <= 6) roman = ["", "I", "II", "III", "IV", "V", "VI"][num];
+          if (num >= 1 && num <= 6)
+            roman = ["", "I", "II", "III", "IV", "V", "VI"][num];
         } else if (s.includes("VI")) roman = "VI";
         else if (s.includes("IV")) roman = "IV";
         else if (s.includes("V")) roman = "V";
         else if (s.includes("III")) roman = "III";
         else if (s.includes("II")) roman = "II";
         else if (s.includes("I")) roman = "I";
-        
+
         setSemester(roman);
       }
     }
@@ -430,7 +433,14 @@ export default function AdminDashboard() {
       const matchSub = !reportSubject || f.subject === reportSubject;
       return matchDept && matchStaff && matchSub;
     });
-  }, [activeDataSource, reportMode, reportDept, acadYear, reportStaff, reportSubject]);
+  }, [
+    activeDataSource,
+    reportMode,
+    reportDept,
+    acadYear,
+    reportStaff,
+    reportSubject,
+  ]);
 
   const totalStudents = reportData.length;
 
@@ -457,7 +467,11 @@ export default function AdminDashboard() {
 
   const scoreCounts = useMemo(() => {
     const counts = Array.from({ length: qCount }, () => ({
-      5: 0, 4: 0, 3: 0, 2: 0, 1: 0,
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
     }));
     if (totalStudents > 0) {
       reportData.forEach((fb) => {
@@ -483,7 +497,11 @@ export default function AdminDashboard() {
         grandTotal += scoreCounts[i][rating] * rating;
       });
     }
-    return { colTotals: totals, colScores: scores, grandTotalScore: grandTotal };
+    return {
+      colTotals: totals,
+      colScores: scores,
+      grandTotalScore: grandTotal,
+    };
   }, [qCount, scoreCounts]);
 
   const maxPossibleScore = totalStudents * qCount * 5;
@@ -495,7 +513,7 @@ export default function AdminDashboard() {
     maxPossibleScore > 0
       ? Math.round((grandTotalScore / maxPossibleScore) * 5)
       : "0";
-  
+
   const filteredStaffList = useMemo(() => {
     return globalStaffList
       .filter((s) => s.dept === reportDept && s.active !== false)
@@ -537,7 +555,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white/80 p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden backdrop-blur-xl print:hidden print-hide">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white/80 p-6 rounded-3xl border-2 border-slate-300 shadow-sm relative overflow-hidden backdrop-blur-xl print:hidden print-hide">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-200">
             <Building2 size={24} strokeWidth={2} />
@@ -552,7 +570,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div
-          className="flex flex-wrap items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/60"
+          className="flex flex-wrap items-center gap-2 bg-slate-50 p-1.5 rounded-xl border-2 border-slate-300"
           role="tablist"
           aria-label="Admin sections"
         >
@@ -581,7 +599,7 @@ export default function AdminDashboard() {
                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                   activeTab === tab
                     ? "bg-white text-violet-700 shadow-sm ring-1 ring-slate-200 scale-100"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
+                    : "text-slate-500 hover:text-violet-600 hover:bg-white hover:shadow-sm hover:scale-[1.02] hover:ring-1 hover:ring-slate-200"
                 }`}
               >
                 {label}
@@ -809,9 +827,7 @@ export default function AdminDashboard() {
             <form onSubmit={handleUpdateSchemeMapping} className="p-6 md:p-8">
               <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-4 md:gap-5 mb-6">
                 <div>
-                  <label className="section-title mb-2 block">
-                    1st Year
-                  </label>
+                  <label className="section-title mb-2 block">1st Year</label>
                   <CustomSelect
                     value={schemeMapping.year1}
                     onChange={(val) =>
@@ -822,9 +838,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2 block">
-                    2nd Year
-                  </label>
+                  <label className="section-title mb-2 block">2nd Year</label>
                   <CustomSelect
                     value={schemeMapping.year2}
                     onChange={(val) =>
@@ -835,9 +849,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div>
-                  <label className="section-title mb-2 block">
-                    3rd Year
-                  </label>
+                  <label className="section-title mb-2 block">3rd Year</label>
                   <CustomSelect
                     value={schemeMapping.year3}
                     onChange={(val) =>
@@ -949,7 +961,7 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-2xl bg-slate-50 border border-slate-200/60">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-6 rounded-2xl bg-slate-50 border-2 border-slate-300">
                 <div className="flex items-start gap-4">
                   <div className="mt-1 h-6 w-6 flex items-center justify-center rounded-xl bg-violet-100 text-violet-600 shadow-sm">
                     <UserCheck size={14} strokeWidth={3} />
@@ -1062,7 +1074,7 @@ export default function AdminDashboard() {
                       {activeStaffRows.map((row) => (
                         <div
                           key={row.id}
-                          className="group flex flex-col sm:flex-row items-center justify-between gap-5 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm hover:shadow-xl hover:border-violet-500/30 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2"
+                          className="group flex flex-col sm:flex-row items-center justify-between gap-5 rounded-[1.5rem] border-2 border-slate-300 bg-white p-5 shadow-sm hover:shadow-xl hover:border-violet-500/50 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2"
                         >
                           <div className="min-w-0 flex-1 flex items-center gap-4">
                             <div className="h-12 w-12 shrink-0 flex items-center justify-center rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 group-hover:from-violet-50 group-hover:to-violet-100 group-hover:text-violet-600 transition-all shadow-sm">
@@ -1264,8 +1276,11 @@ export default function AdminDashboard() {
             </div>
           </Card>
 
-          <div className="flex justify-center mb-6 mt-2 print:hidden print-hide" style={{ "@media print": { display: "none" } }}>
-            <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border border-slate-200 inline-flex w-full md:w-auto">
+          <div
+            className="flex justify-center mb-6 mt-2 print:hidden print-hide"
+            style={{ "@media print": { display: "none" } }}
+          >
+            <div className="bg-white/80 backdrop-blur-xl p-1.5 rounded-2xl shadow-sm border-2 border-slate-300 inline-flex w-full md:w-auto">
               <button
                 onClick={() => setReportMode("faculty")}
                 className={`flex-1 md:w-48 py-3 text-sm font-bold rounded-xl transition-all ${reportMode === "faculty" ? "bg-indigo-600 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}
@@ -1415,7 +1430,9 @@ export default function AdminDashboard() {
                       <p>Date :- {new Date().toLocaleDateString("en-GB")}</p>
                     </div>
                     <div className="border-t border-black my-2 print:my-0.5"></div>
-                    <p className="pt-2 print:pt-1">Name Of The Faculty :- {reportStaff}</p>
+                    <p className="pt-2 print:pt-1">
+                      Name Of The Faculty :- {reportStaff}
+                    </p>
                   </div>
                   <table className="w-full text-xs print:text-[10px] border-collapse border border-black text-center mt-4 print:mt-2">
                     <thead>
@@ -1755,7 +1772,7 @@ export default function AdminDashboard() {
                 </div>
               )}
             </>
-          ) : (reportMode === "institution" || (reportDept && reportStaff)) ? (
+          ) : reportMode === "institution" || (reportDept && reportStaff) ? (
             <div className="text-center py-20 opacity-30">
               <h2 className="text-2xl font-black uppercase text-purple-900">
                 {reportMode === "exit" && !reportSubject
@@ -1793,8 +1810,7 @@ export default function AdminDashboard() {
             </p>
           </div>
           <div className="p-6 md:p-8 space-y-6">
-
-            <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
+            <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border-2 border-slate-300">
               <div>
                 <h4 className="text-lg font-bold text-slate-900">
                   Annual Portal Access
@@ -1808,9 +1824,7 @@ export default function AdminDashboard() {
                 disabled={isSubmitting}
                 className={`px-6 py-2.5 rounded-xl font-bold text-sm transition-all shadow-md ${isInstPortalOpen ? "bg-red-500 text-white hover:bg-red-600" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
               >
-                {isInstPortalOpen
-                  ? "Close Portal"
-                  : "Open Portal"}
+                {isInstPortalOpen ? "Close Portal" : "Open Portal"}
               </button>
             </div>
           </div>

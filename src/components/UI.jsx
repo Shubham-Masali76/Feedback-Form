@@ -2,7 +2,7 @@ import React from "react";
 
 export const Card = ({ children, className = "" }) => (
   <div
-    className={`rounded-2xl border-2 border-slate-300 bg-white shadow-sm overflow-hidden card-print transition-all duration-200 hover:shadow-md hover:border-indigo-300 ${className}`}
+    className={`rounded-2xl border-2 border-slate-300 bg-white shadow-sm overflow-hidden card-print transition-all duration-300 hover:shadow-xl hover:border-indigo-400 hover:-translate-y-1 ${className}`}
   >
     {children}
   </div>

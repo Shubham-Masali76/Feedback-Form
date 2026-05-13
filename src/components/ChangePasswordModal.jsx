@@ -82,21 +82,18 @@ export default function ChangePasswordModal({ open, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[300] overflow-y-auto"
+      className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
       role="dialog"
       aria-modal="true"
       aria-labelledby="change-password-title"
     >
-      <div className="block min-h-full p-4 pt-16 pb-20 text-center sm:p-6 sm:pt-24">
-        <button
-          type="button"
-          className="fixed inset-0 bg-slate-900/50 transition-opacity w-full cursor-default"
-          onClick={() => !busy && onClose()}
-          aria-label="Close"
-          tabIndex="-1"
-        />
-        <div className="relative inline-block text-left w-full max-w-md overflow-hidden rounded-2xl bg-white p-6 shadow-2xl transition-all align-middle animate-toast-in">
-          <div className="flex items-start justify-between gap-4 mb-5">
+      <div
+        className="fixed inset-0 transition-opacity w-full cursor-default"
+        onClick={() => !busy && onClose()}
+        aria-hidden="true"
+      />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white p-6 shadow-2xl transition-all animate-toast-in">
+        <div className="flex items-start justify-between gap-4 mb-5">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
                 <KeyRound size={20} strokeWidth={2} />
@@ -225,7 +222,6 @@ export default function ChangePasswordModal({ open, onClose }) {
             </div>
           </form>
         </div>
-      </div>
     </div>
   );
 }

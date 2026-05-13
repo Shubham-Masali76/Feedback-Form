@@ -43,6 +43,7 @@ import {
   deleteDoc,
   updateDoc,
   writeBatch,
+  or,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -110,6 +111,51 @@ export default function HodDashboard({ user }) {
     div: "",
     tClass: "",
   });
+
+  const handlePRNChange = (val, formType = "std") => {
+    const cleaned = val.replace(/\D/g, "").slice(0, 11);
+    if (formType === "std") {
+      setStdForm((prev) => ({ ...prev, enroll: cleaned }));
+    } else {
+      setEditForm((prev) => ({ ...prev, enroll: cleaned }));
+    }
+  };
+
+  const handleRollChange = (val, formType = "std") => {
+    const normalized = normalizeRollDigits(val);
+    if (formType === "std") {
+      setStdForm((prev) => {
+        const next = { ...prev, roll: normalized };
+        // Auto-select year based on roll number (1xxx -> 1st year, 2xxx -> 2nd year, 3xxx -> 3rd year)
+        if (normalized.length >= 1) {
+          const firstDigit = normalized[0];
+          const yearPrefix = firstDigit + "Y";
+          const matchedYear = dynamicClassOptions.find((group) =>
+            group.options?.[0]?.value?.startsWith(yearPrefix),
+          );
+          if (matchedYear) {
+            next.tClass = matchedYear.options[0].value;
+          }
+        }
+        return next;
+      });
+    } else {
+      setEditForm((prev) => {
+        const next = { ...prev, roll: normalized };
+        if (normalized.length >= 1) {
+          const firstDigit = normalized[0];
+          const yearPrefix = firstDigit + "Y";
+          const matchedYear = dynamicClassOptions.find((group) =>
+            group.options?.[0]?.value?.startsWith(yearPrefix),
+          );
+          if (matchedYear) {
+            next.tClass = matchedYear.options[0].value;
+          }
+        }
+        return next;
+      });
+    }
+  };
   const [subForm, setSubForm] = useState({
     name: "",
     code: "",
@@ -257,69 +303,104 @@ export default function HodDashboard({ user }) {
       setStudents(allFetchedStudents.filter((s) => s.department === user.dept));
       setStudentsLoaded(true);
 
-      // Fetch Feedbacks for Monitor & Reports — scoped to this department's staff
+      // Fetch Feedbacks for Monitor & Reports
       const deptStaffNames = activeStaff
         .filter((s) => s.dept === user.dept)
         .map((s) => s.name);
 
-      const feedQ = deptStaffNames.length > 0
-        ? query(
-            collection(db, "Feedbacks"),
-            where("staffName", "in", deptStaffNames.slice(0, 30)),
-          )
-        : query(
-            collection(db, "Feedbacks"),
-            where("department", "==", user.dept),
-          );
-      const feedSnap = await getDocs(feedQ);
-      const allFetchedFeedbacks = feedSnap.docs.map((d) => ({
-        ...d.data(),
-        id: d.id,
-      }));
+      const qFeed1 = query(
+        collection(db, "Feedbacks"),
+        where("department", "==", user.dept),
+      );
 
-      // Filter in memory to only include feedbacks for this department or its staff
-      const fetchedFeedbacks = allFetchedFeedbacks
-        .filter((f) => {
-          if (f.department === user.dept) return true;
-          const staffObj = activeStaff.find((s) => s.name === f.staffName);
-          return staffObj && staffObj.dept === user.dept;
-        })
-        .sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+      const feedbackQueries = [getDocs(qFeed1)];
+
+      // If we have staff, also fetch feedbacks where they taught in other departments
+      if (deptStaffNames.length > 0) {
+        // Firestore 'in' limit is 30, but usually depts have fewer than 30 staff
+        feedbackQueries.push(
+          getDocs(
+            query(
+              collection(db, "Feedbacks"),
+              where("staffName", "in", deptStaffNames.slice(0, 30)),
+            ),
+          ),
+        );
+      }
+
+      const feedSnapshots = await Promise.all(feedbackQueries);
+      const combinedFeedbacks = new Map();
+
+      feedSnapshots.forEach((snap) => {
+        snap.docs.forEach((d) => {
+          combinedFeedbacks.set(d.id, { id: d.id, ...d.data() });
+        });
+      });
+
+      const fetchedFeedbacks = Array.from(combinedFeedbacks.values()).sort(
+        (a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis(),
+      );
 
       setFeedbacks(fetchedFeedbacks);
-      // Fetch Course Exit Data
-      const exitFormsQ = query(
+
+      // Fetch Course Exit Data — Scoped to both department's subjects and staff's guest teaching
+      const qExit1 = query(
         collection(db, "CourseExitForms"),
         where("department", "==", user.dept),
       );
-      const exitFormsSnap = await getDocs(exitFormsQ);
-      setExitForms(exitFormsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-
-      const exitRespQ = query(
+      const qExitResp1 = query(
         collection(db, "CourseExitResponses"),
         where("department", "==", user.dept),
       );
-      const exitRespSnap = await getDocs(exitRespQ);
+
+      const exitQueries = [getDocs(qExit1), getDocs(qExitResp1)];
+
+      // Note: Exit forms don't always have staffName in the main doc,
+      // but let's assume they might or we'll stick to department for now.
+      // If Exit forms are purely department-based, this is enough.
+
+      const [exitFormsSnap, exitRespSnap] = await Promise.all(exitQueries);
+
+      setExitForms(exitFormsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setExitResponses(
         exitRespSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
       );
 
-      // Fetch Allocations
-      const allocQ = query(
+      // Fetch Allocations - Using two queries and merging to avoid complex OR index requirements
+      const q1 = query(
         collection(db, "Allocations"),
         where("department", "==", user.dept),
       );
-      const allocSnap = await getDocs(allocQ);
-      const fetchedAllocations = allocSnap.docs.map((d) => ({
-        ...d.data(),
-        id: d.id,
-      }));
-      setAllocations(fetchedAllocations);
+      const q2 = query(
+        collection(db, "Allocations"),
+        where("staffDept", "==", user.dept),
+      );
 
-      const setSnap = await getDoc(doc(db, "Settings", "Global"));
-      if (setSnap.exists()) {
-        setIsPortalOpen(setSnap.data().studentPortalOpen === true);
-        setIsStaffPortalOpen(setSnap.data().staffPortalOpen === true);
+      const [allocSnap1, allocSnap2] = await Promise.all([
+        getDocs(q1),
+        getDocs(q2),
+      ]);
+
+      const combinedAllocations = new Map();
+      allocSnap1.docs.forEach((d) =>
+        combinedAllocations.set(d.id, { id: d.id, ...d.data() }),
+      );
+      allocSnap2.docs.forEach((d) =>
+        combinedAllocations.set(d.id, { id: d.id, ...d.data() }),
+      );
+
+      setAllocations(Array.from(combinedAllocations.values()));
+
+      // Fetch department specific portal settings
+      const deptSettingsSnap = await getDoc(
+        doc(db, "Settings", `Dept_${user.dept}`),
+      );
+      if (deptSettingsSnap.exists()) {
+        setIsPortalOpen(deptSettingsSnap.data().studentPortalOpen === true);
+        setIsStaffPortalOpen(deptSettingsSnap.data().staffPortalOpen === true);
+      } else {
+        setIsPortalOpen(false);
+        setIsStaffPortalOpen(false);
       }
 
       // --- DYNAMIC SCHEME GENERATION ---
@@ -540,13 +621,26 @@ export default function HodDashboard({ user }) {
           skippedEmail++;
           continue;
         }
+
+        const sanitize = (str, maxLen) =>
+          String(str || "")
+            .replace(/(<([^>]+)>)/gi, "")
+            .trim()
+            .substring(0, maxLen);
+        const rawName = nameCols
+          .map((idx) => String(r[idx] || "").trim())
+          .join(" ");
+        const safeName = sanitize(rawName, 100);
+        const safeEnroll = sanitize(r[enrollCol], 20);
+        const safeEmail = sanitize(emailStr, 100);
+
         promises.push(
           addDoc(collection(db, "Students"), {
             department: user.dept,
-            name: nameCols.map((idx) => String(r[idx] || "").trim()).join(" "),
+            name: safeName,
             rollNo,
-            enrollmentNo: String(r[enrollCol] || "").trim(),
-            email: emailStr,
+            enrollmentNo: safeEnroll,
+            email: safeEmail,
             division: excelDiv || "A",
             targetClass: excelClass,
             status: "pending",
@@ -594,9 +688,7 @@ export default function HodDashboard({ user }) {
     const l3 = extractL(sMap.year3);
 
     const deptCodeTarget =
-      allDepartmentsData.find(
-        (d) => d.name === (allotForm.staffDept || user.dept),
-      )?.code || "XX";
+      allDepartmentsData.find((d) => d.name === user.dept)?.code || "XX";
 
     const semesterGroups = [
       { group: `Semesters 1 & 2 - ${y1}`, schemeLetter: l1, semesters: [1, 2] },
@@ -614,7 +706,7 @@ export default function HodDashboard({ user }) {
         };
       }),
     }));
-  }, [allotForm.staffDept, user.dept, allDepartmentsData, schemeMappings]);
+  }, [user.dept, allDepartmentsData, schemeMappings]);
 
   const extractSemesterNumber = (classCode) => {
     const match = String(classCode || "")
@@ -714,7 +806,8 @@ export default function HodDashboard({ user }) {
         tClass: allotForm.tClass,
         targetClass: allotForm.tClass,
         division: allotForm.division,
-        department: allotForm.staffDept || user.dept,
+        department: user.dept,
+        staffDept: allotForm.staffDept,
         semester: selectedSubjectData?.semester || "",
         isElective: isElective,
       };
@@ -751,7 +844,7 @@ export default function HodDashboard({ user }) {
   const handleEditAllotment = (alloc) => {
     setEditingAllotmentId(alloc.id);
     setAllotForm({
-      staffDept: alloc.department || user.dept,
+      staffDept: alloc.staffDept || alloc.department || user.dept,
       staff: alloc.staff || "",
       subject: alloc.subject || "",
       tClass: alloc.targetClass || alloc.tClass || "",
@@ -785,6 +878,45 @@ export default function HodDashboard({ user }) {
   };
 
   // --- REPORT ENGINE CALCULATIONS ---
+  const reportFacultyOptions = useMemo(() => {
+    if (user.role === "admin") {
+      const list = reportDept
+        ? allStaffList.filter((s) => s.dept === reportDept).map((s) => s.name)
+        : allStaffList.map((s) => s.name);
+      return list.map((s) => ({ value: s, label: s }));
+    }
+
+    const names = new Set();
+    // 1. Permanent Staff of this department
+    allStaffList
+      .filter((s) => s.dept === user.dept)
+      .forEach((s) => names.add(s.name));
+    // 2. Allotted Staff (including Guest Faculty)
+    allocations.forEach((a) => {
+      if (a.staff) names.add(a.staff);
+    });
+    // 3. Staff with existing feedback
+    feedbacks.forEach((f) => {
+      if (f.staffName) names.add(f.staffName);
+    });
+    exitForms.forEach((f) => {
+      if (f.staffName) names.add(f.staffName);
+    });
+
+    return Array.from(names)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name }));
+  }, [
+    user.role,
+    user.dept,
+    reportDept,
+    allStaffList,
+    allocations,
+    feedbacks,
+    exitForms,
+  ]);
+
   const monitorStaffOptions = useMemo(() => {
     const staffNamesWithDepts = allStaffList.map((s) => ({
       name: s.name,
@@ -864,7 +996,9 @@ export default function HodDashboard({ user }) {
           let matchClass =
             s.targetClass === (allocation.targetClass || allocation.tClass);
           if (!matchClass) {
-            const filterYear = getYearFromClassCode(allocation.targetClass || allocation.tClass);
+            const filterYear = getYearFromClassCode(
+              allocation.targetClass || allocation.tClass,
+            );
             const studentYear = getYearFromClassCode(s.targetClass);
             if (filterYear !== null && filterYear === studentYear) {
               matchClass = true;
@@ -881,21 +1015,42 @@ export default function HodDashboard({ user }) {
 
   const totalStudentsInClass = studentsInClass.length;
 
-  const submittedStudentNames = useMemo(
-    () => new Set(reportData.map((f) => f.studentName)),
+  const submittedStudentEmails = useMemo(
+    () => new Set(reportData.map((f) => f.studentEmail || f.email)),
     [reportData],
   );
-  const submittedStudents = submittedStudentNames.size;
+  const submittedStudents = submittedStudentEmails.size;
   const remainingStudentsList = useMemo(
-    () => studentsInClass.filter((s) => !submittedStudentNames.has(s.name)),
-    [studentsInClass, submittedStudentNames],
+    () => studentsInClass.filter((s) => !submittedStudentEmails.has(s.email)),
+    [studentsInClass, submittedStudentEmails],
   );
   const remainingStudents = remainingStudentsList.length;
 
-  const submittedStudentsList = useMemo(
-    () => studentsInClass.filter((s) => submittedStudentNames.has(s.name)),
-    [studentsInClass, submittedStudentNames],
-  );
+  const submittedStudentsList = useMemo(() => {
+    // 1. Get unique emails from reportData (actual feedbacks)
+    const uniqueEmails = [
+      ...new Set(reportData.map((f) => f.studentEmail || f.email)),
+    ].filter(Boolean);
+
+    // 2. For each email, find the best data (either from the students list or the feedback itself)
+    return uniqueEmails.map((email) => {
+      // Find the student in the directory (best source for PRN, etc.)
+      const studentInDir = students.find((s) => s.email === email);
+      if (studentInDir) return studentInDir;
+
+      // Fallback: Find the first feedback from this student to get their name/roll
+      const firstFb = reportData.find(
+        (f) => (f.studentEmail || f.email) === email,
+      );
+      return {
+        name: firstFb?.studentName || "Anonymous Student",
+        email: email,
+        rollNo: firstFb?.studentRollNo || "N/A",
+        enrollmentNo: firstFb?.studentPRN || firstFb?.enrollmentNo || "N/A",
+        division: firstFb?.division || "A",
+      };
+    });
+  }, [reportData, students]);
 
   const filteredStudents = useMemo(() => {
     if (!searchRollNo && !filterClass && !filterDivision) return [];
@@ -908,7 +1063,7 @@ export default function HodDashboard({ user }) {
         s.rollNo?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
         s.prn?.toLowerCase().includes(searchRollNo.toLowerCase()) ||
         s.enrollmentNo?.toLowerCase().includes(searchRollNo.toLowerCase());
-      
+
       let matchClass = !filterClass || s.targetClass === filterClass;
       if (filterClass && !matchClass) {
         const filterYear = getYearFromClassCode(filterClass);
@@ -985,12 +1140,18 @@ export default function HodDashboard({ user }) {
       : "0";
 
   const staffSubjects = [
-    ...new Set(
-      [...feedbacks, ...exitForms]
+    ...new Set([
+      ...feedbacks
         .filter((f) => f.staffName === reportStaff)
         .map((f) => f.subject),
-    ),
-  ];
+      ...exitForms
+        .filter((f) => f.staffName === reportStaff)
+        .map((f) => f.subject),
+      ...allocations
+        .filter((a) => a.staff === reportStaff)
+        .map((a) => a.subject),
+    ]),
+  ].filter(Boolean);
 
   // --- STUDENT LIFECYCLE HANDLERS ---
   const openDetainedInputModal = ({
@@ -1140,9 +1301,15 @@ export default function HodDashboard({ user }) {
           promote23Done: false,
         });
       } else {
+        const sourceYearNum = getYearFromClassCode(sourceClass);
+        const targetYearNum = getYearFromClassCode(targetClass);
         processableStudents.forEach((std) => {
           const docRef = doc(db, "Students", std.id);
-          const targetYearNum = getYearFromClassCode(targetClass);
+          const nextTargetClass = getTargetYearClassCode(
+            std.targetClass,
+            targetYearNum,
+            targetClass,
+          );
 
           let newRollNo = std.rollNo;
           if (newRollNo) {
@@ -1155,7 +1322,7 @@ export default function HodDashboard({ user }) {
           }
 
           batch.update(docRef, {
-            targetClass,
+            targetClass: nextTargetClass,
             rollNo: newRollNo,
             status: "pending",
           });
@@ -1163,7 +1330,7 @@ export default function HodDashboard({ user }) {
         await batch.commit();
 
         success(
-          `Promoted ${processableStudents.length} student(s) from ${sourceClass} to ${targetClass}. ${detainedStudents.length} detained student(s) stayed back.`,
+          `Promoted ${processableStudents.length} student(s) from Year ${sourceYearNum} to Year ${targetYearNum}. ${detainedStudents.length} detained student(s) stayed back.`,
         );
 
         if (action === "promote23") {
@@ -1199,6 +1366,30 @@ export default function HodDashboard({ user }) {
       (opt) => getYearFromClassCode(opt.value) === yearNum,
     );
     return matched?.value || "";
+  };
+
+  const getTargetYearClassCode = (
+    currentClassCode,
+    targetYearNum,
+    fallbackClassCode,
+  ) => {
+    const normalized = String(currentClassCode || "")
+      .trim()
+      .toUpperCase();
+
+    const legacyPattern = normalized.match(/^([1-3])Y([A-Z]+)([A-Z])$/);
+    if (legacyPattern) {
+      const [, , deptCode, schemeLetter] = legacyPattern;
+      return `${targetYearNum}Y${deptCode}${schemeLetter}`;
+    }
+
+    const semPattern = normalized.match(/^([A-Z]+)([1-6])([A-Z])$/);
+    if (semPattern) {
+      const [, deptCode, , schemeLetter] = semPattern;
+      return `${targetYearNum}Y${deptCode}${schemeLetter}`;
+    }
+
+    return fallbackClassCode || normalized;
   };
 
   const processBulkPromote = async (sourceClass, targetClass) => {
@@ -1246,16 +1437,9 @@ export default function HodDashboard({ user }) {
     }
 
     const studentsToPromote = students.filter(
-      (s) => s.targetClass === sourceClass,
+      (s) => getYearFromClassCode(s.targetClass) === sourceYear,
     );
     if (studentsToPromote.length === 0) {
-      if (sourceYear === 2 && targetYearNum === 3) {
-        setWorkflowProgress((prev) => ({
-          ...prev,
-          promote23Done: true,
-        }));
-        return;
-      }
       warning(`No students found in ${sourceClass}.`);
       return;
     }
@@ -1290,18 +1474,13 @@ export default function HodDashboard({ user }) {
     const thirdYearOption = dynamicClassOptions.find((g) =>
       g.group.includes("3rd Year"),
     )?.options[0];
-    const target = thirdYearOption?.value;
-    if (!target) {
-      warning("Could not identify 3rd year class.");
-      return;
-    }
+    const target = thirdYearOption?.value || getPrimaryClassCodeForYear(3);
 
-    const studentsToDelete = students.filter((s) => s.targetClass === target);
+    const studentsToDelete = students.filter(
+      (s) => getYearFromClassCode(s.targetClass) === 3,
+    );
     if (studentsToDelete.length === 0) {
-      setWorkflowProgress((prev) => ({
-        ...prev,
-        cleanup3Done: true,
-      }));
+      warning("No 3rd year students found for cleanup.");
       return;
     }
 
@@ -1376,36 +1555,22 @@ export default function HodDashboard({ user }) {
     isSubmitting ||
     (thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done);
   const step3Locked = isSubmitting || !workflowProgress.promote23Done;
-  const activeLifecycleStep =
-    thirdYearStudentsCount > 0 && !workflowProgress.cleanup3Done
-      ? 1
-      : !workflowProgress.promote23Done
-        ? 2
-        : 3;
 
   useEffect(() => {
     if (activeTab !== "lifecycle") return;
     if (!studentsLoaded) return;
-
-    // Auto-skip Step 1 if there are no 3rd year students.
-    if (thirdYearStudentsCount === 0 && !workflowProgress.cleanup3Done) {
-      setWorkflowProgress((prev) => ({ ...prev, cleanup3Done: true }));
+    // Reconcile stale saved progress with live student data.
+    if (thirdYearStudentsCount > 0 && workflowProgress.promote23Done) {
+      setWorkflowProgress({
+        cleanup3Done: false,
+        promote23Done: false,
+      });
       return;
-    }
-
-    // Auto-skip Step 2 if there are no 2nd year students.
-    if (
-      workflowProgress.cleanup3Done &&
-      secondYearStudentsCount === 0 &&
-      !workflowProgress.promote23Done
-    ) {
-      setWorkflowProgress((prev) => ({ ...prev, promote23Done: true }));
     }
   }, [
     activeTab,
     studentsLoaded,
     thirdYearStudentsCount,
-    secondYearStudentsCount,
     workflowProgress.cleanup3Done,
     workflowProgress.promote23Done,
   ]);
@@ -1529,7 +1694,7 @@ export default function HodDashboard({ user }) {
   return (
     <>
       <div className="space-y-6">
-        <div className="flex flex-col xl:flex-row items-center justify-between gap-6 print:hidden bg-white/80 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] ring-1 ring-slate-200/50 relative overflow-hidden">
+        <div className="flex flex-col xl:flex-row items-center justify-between gap-6 print:hidden bg-white/80 backdrop-blur-xl p-5 md:p-6 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-2 border-slate-300 relative overflow-hidden">
           <div className="flex items-center gap-4 w-full xl:w-auto">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-200 shrink-0">
               <Building2 size={24} strokeWidth={2} />
@@ -1545,7 +1710,7 @@ export default function HodDashboard({ user }) {
             </div>
           </div>
           <div
-            className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200/60 w-full xl:w-auto"
+            className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-50 p-2 rounded-2xl border-2 border-slate-300 w-full xl:w-auto"
             role="tablist"
             aria-label="HOD sections"
           >
@@ -1568,7 +1733,7 @@ export default function HodDashboard({ user }) {
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap w-full ${
                   activeTab === t.id
                     ? "bg-white text-violet-700 shadow-md ring-1 ring-slate-200 scale-100"
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
+                    : "text-slate-500 hover:text-violet-600 hover:bg-white hover:shadow-sm hover:scale-[1.02] hover:ring-1 hover:ring-slate-200"
                 }`}
               >
                 <t.icon
@@ -1697,12 +1862,7 @@ export default function HodDashboard({ user }) {
                     title={ROLL_NUMBER_HINT}
                     className="input-app py-2.5 text-sm font-semibold tabular-nums tracking-widest"
                     value={stdForm.roll}
-                    onChange={(e) =>
-                      setStdForm({
-                        ...stdForm,
-                        roll: normalizeRollDigits(e.target.value),
-                      })
-                    }
+                    onChange={(e) => handleRollChange(e.target.value, "std")}
                     required
                   />
                 </div>
@@ -1712,11 +1872,10 @@ export default function HodDashboard({ user }) {
                   </label>
                   <input
                     placeholder="PRN"
+                    maxLength={11}
                     className="input-app py-2.5 text-sm font-semibold"
                     value={stdForm.enroll}
-                    onChange={(e) =>
-                      setStdForm({ ...stdForm, enroll: e.target.value })
-                    }
+                    onChange={(e) => handlePRNChange(e.target.value, "std")}
                     required
                   />
                 </div>
@@ -1825,7 +1984,7 @@ export default function HodDashboard({ user }) {
                   )}
 
                   {studentsLoaded && (
-                    <div className="rounded-2xl border border-red-100 bg-red-50/40 p-5 space-y-4">
+                    <div className="rounded-2xl border-2 border-red-200/80 bg-red-50/40 p-5 space-y-4 shadow-sm hover:border-red-300 transition-colors">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-red-700 uppercase tracking-widest flex items-center gap-2">
                           <Trash2 size={16} /> Step 1 - Cleanup 3rd Year
@@ -1835,20 +1994,24 @@ export default function HodDashboard({ user }) {
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100/60 text-red-700 rounded-lg border border-red-200/60 w-fit">
                           <Users size={12} strokeWidth={2.5} />
                           <span className="text-[10px] font-black uppercase tracking-wider">
-                            Detected: {thirdYearStudentsCount} student{thirdYearStudentsCount === 1 ? '' : 's'} in 3rd year
+                            Detected: {thirdYearStudentsCount} student
+                            {thirdYearStudentsCount === 1 ? "" : "s"} in 3rd
+                            year
                           </span>
                         </div>
                       )}
-                      
+
                       {thirdYearStudentsCount === 0 ? (
                         <div className="bg-white/60 p-4 rounded-xl border border-red-100/50 text-center shadow-sm">
-                          <p className="text-sm font-bold text-red-600/80">No 3rd year students found. Step auto-completed.</p>
+                          <p className="text-sm font-bold text-red-600/80">
+                            No 3rd year students available for cleanup.
+                          </p>
                         </div>
                       ) : (
                         <>
                           <p className="text-xs font-semibold text-red-700/90">
-                            Clear outgoing 3rd year students. Enter detained roll
-                            numbers to keep repeaters.
+                            Clear outgoing 3rd year students. Enter detained
+                            roll numbers to keep repeaters.
                           </p>
                           <button
                             onClick={handleBulkDeleteStudents}
@@ -1859,7 +2022,7 @@ export default function HodDashboard({ user }) {
                           </button>
                         </>
                       )}
-                      
+
                       {cleanupLockMessage && thirdYearStudentsCount > 0 && (
                         <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
                           {cleanupLockMessage}
@@ -1869,32 +2032,37 @@ export default function HodDashboard({ user }) {
                   )}
 
                   {studentsLoaded && (
-                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-5 space-y-4">
+                    <div className="rounded-2xl border-2 border-orange-200/80 bg-orange-50/40 p-5 space-y-4 shadow-sm hover:border-orange-300 transition-colors">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
                           <ArrowUpCircle size={16} /> Step 2 - Promote 2nd to
                           3rd
                         </h4>
                       </div>
-                      
+
                       {secondYearStudentsCount > 0 && (
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100/60 text-orange-700 rounded-lg border border-orange-200/60 w-fit">
                           <Users size={12} strokeWidth={2.5} />
                           <span className="text-[10px] font-black uppercase tracking-wider">
-                            Detected: {secondYearStudentsCount} student{secondYearStudentsCount === 1 ? '' : 's'} in 2nd year
+                            Detected: {secondYearStudentsCount} student
+                            {secondYearStudentsCount === 1 ? "" : "s"} in 2nd
+                            year
                           </span>
                         </div>
                       )}
-                      
+
                       {secondYearStudentsCount === 0 ? (
                         <div className="bg-white/60 p-4 rounded-xl border border-orange-100/50 text-center shadow-sm">
-                          <p className="text-sm font-bold text-orange-600/80">No 2nd year students found. Step auto-completed.</p>
+                          <p className="text-sm font-bold text-orange-600/80">
+                            No 2nd year students available for promotion to 3rd
+                            year.
+                          </p>
                         </div>
                       ) : (
                         <>
                           <p className="text-xs font-semibold text-orange-700/90">
-                            Promotes all eligible 2nd-year students. Detained roll
-                            numbers stay in 2nd year.
+                            Promotes all eligible 2nd-year students. Detained
+                            roll numbers stay in 2nd year.
                           </p>
                           <button
                             onClick={handleStep23Promotion}
@@ -1905,9 +2073,10 @@ export default function HodDashboard({ user }) {
                           </button>
                         </>
                       )}
-                      
+
                       {thirdYearStudentsCount > 0 &&
-                        !workflowProgress.cleanup3Done && secondYearStudentsCount > 0 && (
+                        !workflowProgress.cleanup3Done &&
+                        secondYearStudentsCount > 0 && (
                           <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
                             Step 2 locked until Step 1 is completed.
                           </p>
@@ -1916,32 +2085,37 @@ export default function HodDashboard({ user }) {
                   )}
 
                   {studentsLoaded && (
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-5 space-y-4">
+                    <div className="rounded-2xl border-2 border-indigo-200/80 bg-indigo-50/40 p-5 space-y-4 shadow-sm hover:border-indigo-300 transition-colors">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
                           <ArrowUpCircle size={16} /> Step 3 - Promote 1st to
                           2nd
                         </h4>
                       </div>
-                      
+
                       {firstYearStudentsCount > 0 && (
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100/60 text-indigo-700 rounded-lg border border-indigo-200/60 w-fit">
                           <Users size={12} strokeWidth={2.5} />
                           <span className="text-[10px] font-black uppercase tracking-wider">
-                            Detected: {firstYearStudentsCount} student{firstYearStudentsCount === 1 ? '' : 's'} in 1st year
+                            Detected: {firstYearStudentsCount} student
+                            {firstYearStudentsCount === 1 ? "" : "s"} in 1st
+                            year
                           </span>
                         </div>
                       )}
-                      
+
                       {firstYearStudentsCount === 0 ? (
                         <div className="bg-white/60 p-4 rounded-xl border border-indigo-100/50 text-center shadow-sm">
-                          <p className="text-sm font-bold text-indigo-600/80">No 1st year students found. Step completed.</p>
+                          <p className="text-sm font-bold text-indigo-600/80">
+                            No 1st year students available for promotion to 2nd
+                            year.
+                          </p>
                         </div>
                       ) : (
                         <>
                           <p className="text-xs font-semibold text-indigo-700/90">
-                            Promotes all eligible 1st-year students. Detained roll
-                            numbers stay in 1st year.
+                            Promotes all eligible 1st-year students. Detained
+                            roll numbers stay in 1st year.
                           </p>
                           <button
                             onClick={handleStep12Promotion}
@@ -1952,17 +2126,18 @@ export default function HodDashboard({ user }) {
                           </button>
                         </>
                       )}
-                      
-                      {!workflowProgress.promote23Done && firstYearStudentsCount > 0 && (
-                        <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
-                          Step 3 locked until Step 2 is completed.
-                        </p>
-                      )}
+
+                      {!workflowProgress.promote23Done &&
+                        firstYearStudentsCount > 0 && (
+                          <p className="text-[11px] font-bold text-red-600 uppercase tracking-tight">
+                            Step 3 locked until Step 2 is completed.
+                          </p>
+                        )}
                     </div>
                   )}
 
                   {/* Semester Isolation / Status Reset */}
-                  <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100 space-y-5">
+                  <div className="p-6 bg-blue-50/50 rounded-3xl border-2 border-blue-200/80 space-y-5 shadow-sm hover:border-blue-300 transition-colors">
                     <h4 className="text-sm font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
                       <RefreshCw size={16} /> Optional - New Semester Feedback
                       Reset
@@ -2013,7 +2188,7 @@ export default function HodDashboard({ user }) {
                     </div>
                     <input
                       type="text"
-                      className="w-full pl-10 pr-4 py-2 border border-slate-200/80 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-semibold transition-all hover:border-indigo-300 bg-white shadow-sm"
+                      className="w-full pl-10 pr-4 py-2 border-2 border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 font-semibold transition-all hover:border-indigo-300 bg-white shadow-sm"
                       placeholder="Search by name, roll, or PRN..."
                       value={searchRollNo}
                       onChange={(e) => setSearchRollNo(e.target.value)}
@@ -2107,10 +2282,7 @@ export default function HodDashboard({ user }) {
                                 required
                                 value={editForm.roll}
                                 onChange={(e) =>
-                                  setEditForm({
-                                    ...editForm,
-                                    roll: normalizeRollDigits(e.target.value),
-                                  })
+                                  handleRollChange(e.target.value, "edit")
                                 }
                                 className="input-app py-2 text-sm font-semibold tabular-nums w-full"
                                 placeholder="Roll No"
@@ -2122,12 +2294,10 @@ export default function HodDashboard({ user }) {
                               </label>
                               <input
                                 required
+                                maxLength={11}
                                 value={editForm.enroll}
                                 onChange={(e) =>
-                                  setEditForm({
-                                    ...editForm,
-                                    enroll: e.target.value,
-                                  })
+                                  handlePRNChange(e.target.value, "edit")
                                 }
                                 className="input-app py-2 text-sm font-semibold w-full"
                                 placeholder="PRN"
@@ -2666,17 +2836,29 @@ export default function HodDashboard({ user }) {
                   </label>
                   <CustomSelect
                     value={allotForm.subject}
-                    onChange={(val) =>
-                      setAllotForm({ ...allotForm, subject: val })
-                    }
+                    onChange={(val) => {
+                      const selectedSub = allSubjectList.find(
+                        (s) => s.name === val && s.department === user.dept,
+                      );
+                      const autoClass = selectedSub?.semester
+                        ? semesterOptionMeta.find(
+                            (m) => m.value === String(selectedSub.semester),
+                          )?.code
+                        : allotForm.tClass;
+
+                      setAllotForm({
+                        ...allotForm,
+                        subject: val,
+                        tClass: autoClass || allotForm.tClass,
+                      });
+                    }}
                     options={[
                       {
                         group: "--- MANDATORY ---",
                         options: allSubjectList
                           .filter(
                             (s) =>
-                              s.department ===
-                                (allotForm.staffDept || user.dept) &&
+                              s.department === user.dept &&
                               !s.isElective &&
                               (!allotForm.tClass ||
                                 !s.semester ||
@@ -2693,8 +2875,7 @@ export default function HodDashboard({ user }) {
                         options: allSubjectList
                           .filter(
                             (s) =>
-                              s.department ===
-                                (allotForm.staffDept || user.dept) &&
+                              s.department === user.dept &&
                               s.isElective &&
                               (!allotForm.tClass ||
                                 !s.semester ||
@@ -2717,9 +2898,26 @@ export default function HodDashboard({ user }) {
                     </label>
                     <CustomSelect
                       value={allotForm.tClass}
-                      onChange={(val) =>
-                        setAllotForm({ ...allotForm, tClass: val })
-                      }
+                      onChange={(val) => {
+                        const newSem = extractSemesterNumber(val);
+                        const selectedSub = allSubjectList.find(
+                          (s) =>
+                            s.name === allotForm.subject &&
+                            s.department === user.dept,
+                        );
+
+                        // Clear subject if it doesn't match the new semester
+                        const subjectStillValid =
+                          !selectedSub ||
+                          !selectedSub.semester ||
+                          String(selectedSub.semester) === newSem;
+
+                        setAllotForm({
+                          ...allotForm,
+                          tClass: val,
+                          subject: subjectStillValid ? allotForm.subject : "",
+                        });
+                      }}
                       options={dynamicClassOptionsForAllotment}
                       placeholder="Target Class"
                     />
@@ -2787,6 +2985,17 @@ export default function HodDashboard({ user }) {
                                 {alloc.targetClass || alloc.tClass} · Div{" "}
                                 {alloc.division}
                               </span>
+                              {alloc.department !== user.dept && (
+                                <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md ring-1 ring-blue-100">
+                                  Teaching in {alloc.department}
+                                </span>
+                              )}
+                              {alloc.staffDept &&
+                                alloc.staffDept !== user.dept && (
+                                  <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-md ring-1 ring-purple-100">
+                                    From {alloc.staffDept}
+                                  </span>
+                                )}
                             </div>
                           </div>
                           <div className="flex items-center ml-4 gap-1">
@@ -2796,7 +3005,7 @@ export default function HodDashboard({ user }) {
                               className={`p-2.5 rounded-xl transition-colors ${
                                 editingAllotmentId === alloc.id
                                   ? "text-orange-700 bg-orange-100"
-                                  : "text-slate-300 hover:text-orange-600 hover:bg-orange-50"
+                                  : "text-slate-400 hover:text-orange-600 hover:bg-orange-50 hover:shadow-sm hover:border-orange-200"
                               }`}
                               title="Edit allotment"
                             >
@@ -2811,7 +3020,7 @@ export default function HodDashboard({ user }) {
                                   subject: alloc.subject,
                                 })
                               }
-                              className="p-2.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              className="p-2.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 hover:shadow-sm hover:border-red-200 transition-colors"
                               title="Delete allotment"
                             >
                               <Trash2 size={18} />
@@ -2965,30 +3174,58 @@ export default function HodDashboard({ user }) {
 
         {/* Detained Roll Input Modal */}
         {detainedInputModal.open && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-            <Card className="w-full max-w-lg p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-              <div className="p-6 border-b border-orange-100 bg-orange-50/30 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-black text-orange-900">
-                    {detainedInputModal.title}
-                  </h3>
-                  <p className="text-xs font-bold text-orange-600 mt-1">
-                    {detainedInputModal.message}
-                  </p>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="flex w-full max-w-md flex-col overflow-hidden border border-orange-100/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.28)] animate-in zoom-in-95 duration-300">
+              <div className="border-b border-orange-100 bg-gradient-to-r from-orange-50 via-white to-amber-50 px-4 py-4 sm:px-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-white/80 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-orange-700">
+                      <AlertCircle size={12} className="text-orange-500" />
+                      Detained Student Input
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-orange-950">
+                      {detainedInputModal.title}
+                    </h3>
+                    <p className="mt-1.5 text-xs font-semibold leading-relaxed text-orange-700/90">
+                      {detainedInputModal.message}
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeDetainedFlow}
+                    className="rounded-xl p-2 text-orange-400 transition-colors hover:bg-orange-100 hover:text-orange-600"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={closeDetainedFlow}
-                  className="p-2 hover:bg-orange-100 rounded-xl text-orange-400 transition-colors"
-                >
-                  <X size={20} />
-                </button>
               </div>
-              <div className="p-6 space-y-4 bg-slate-50/50">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">
-                    Students in this step:{" "}
-                    {detainedInputModal.candidates.length}
-                  </p>
+
+              <div className="space-y-3 bg-slate-50/70 px-4 py-4 sm:px-5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                      Students
+                    </p>
+                    <p className="mt-1 text-lg font-black text-slate-900">
+                      {detainedInputModal.candidates.length}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-orange-100 bg-orange-50/70 p-3 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-500">
+                      Format
+                    </p>
+                    <p className="mt-1 text-xs font-black text-orange-900">
+                      Commas or spaces
+                    </p>
+                    <p className="mt-1 text-[10px] font-semibold text-orange-700/80">
+                      `1523, 1541 1550`
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <label className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    Detained Roll Numbers
+                  </label>
                   <textarea
                     value={detainedRollInput}
                     onChange={(e) => {
@@ -3000,44 +3237,54 @@ export default function HodDashboard({ user }) {
                         setDetainedInputErrors({ invalid: [], notFound: [] });
                       }
                     }}
-                    rows={4}
+                    rows={2}
                     placeholder="Enter detained roll numbers (comma or space separated)"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-inner focus:border-orange-300 focus:bg-white focus:outline-none focus:ring-4 focus:ring-orange-500/10"
                   />
+                  <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                    Leave empty if none are detained for this step.
+                  </p>
                 </div>
+
                 {(detainedInputErrors.invalid.length > 0 ||
                   detainedInputErrors.notFound.length > 0) && (
-                  <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-2">
-                    {detainedInputErrors.invalid.length > 0 && (
-                      <p className="text-[11px] font-bold text-red-700">
-                        Invalid roll numbers:{" "}
-                        {detainedInputErrors.invalid.join(", ")}
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 shadow-sm">
+                    <div className="mb-2 flex items-center gap-2 text-red-700">
+                      <AlertCircle size={14} />
+                      <p className="text-xs font-black uppercase tracking-[0.16em]">
+                        Please Review Input
                       </p>
-                    )}
-                    {detainedInputErrors.notFound.length > 0 && (
-                      <p className="text-[11px] font-bold text-red-700">
-                        Not found in this step:{" "}
-                        {detainedInputErrors.notFound.join(", ")}
-                      </p>
-                    )}
+                    </div>
+                    <div className="space-y-2">
+                      {detainedInputErrors.invalid.length > 0 && (
+                        <p className="text-xs font-bold text-red-700">
+                          Invalid roll numbers:{" "}
+                          {detainedInputErrors.invalid.join(", ")}
+                        </p>
+                      )}
+                      {detainedInputErrors.notFound.length > 0 && (
+                        <p className="text-xs font-bold text-red-700">
+                          Not found in this step:{" "}
+                          {detainedInputErrors.notFound.join(", ")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Leave empty if no detained students for this step.
-                </p>
               </div>
-              <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+
+              <div className="flex flex-col-reverse gap-2.5 border-t border-slate-100 bg-white px-4 py-4 sm:flex-row sm:justify-end sm:px-5">
                 <button
                   onClick={closeDetainedFlow}
-                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={proceedWithDetainedRolls}
-                  className="flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white bg-orange-600 shadow-lg shadow-orange-200 transition-all hover:scale-[1.02] active:scale-95"
+                  className="w-full rounded-xl bg-orange-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-orange-200 transition-all hover:scale-[1.01] hover:bg-orange-700 active:scale-95 sm:w-auto"
                 >
-                  Proceed
+                  Review Detained Students
                 </button>
               </div>
             </Card>
@@ -3046,104 +3293,127 @@ export default function HodDashboard({ user }) {
 
         {/* Detained Confirmation Modal */}
         {detainedConfirmModal.open && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-            <Card className="w-full max-w-xl p-0 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-              <div className="p-6 border-b border-indigo-100 bg-indigo-50/30 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-black text-indigo-900">
-                    {detainedConfirmModal.title}
-                  </h3>
-                  <p className="text-xs font-bold text-indigo-600 mt-1">
-                    These detained students will stay in their current year.
-                  </p>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <Card className="flex max-h-[min(76dvh,540px)] w-full max-w-lg flex-col overflow-hidden border border-indigo-100/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.28)] animate-in zoom-in-95 duration-300">
+              <div className="border-b border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-blue-50 px-4 py-4 sm:px-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/80 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-indigo-700">
+                      <CheckCircle size={12} className="text-indigo-500" />
+                      Final Confirmation
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-indigo-950">
+                      {detainedConfirmModal.title}
+                    </h3>
+                    <p className="mt-1.5 text-xs font-semibold leading-relaxed text-indigo-700/90">
+                      These detained students will stay in their current year.
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeDetainedFlow}
+                    className="rounded-xl p-2 text-indigo-400 transition-colors hover:bg-indigo-100 hover:text-indigo-600"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={closeDetainedFlow}
-                  className="p-2 hover:bg-indigo-100 rounded-xl text-indigo-400 transition-colors"
-                >
-                  <X size={20} />
-                </button>
               </div>
-              <div className="p-6 space-y-4 bg-slate-50/50 max-h-[55vh] overflow-y-auto">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-xl bg-white border border-slate-200 p-3">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">
+
+              <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 px-4 py-4 sm:px-5">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                       Total
                     </p>
-                    <p className="text-lg font-black text-slate-800">
+                    <p className="mt-1 text-lg font-black text-slate-900">
                       {detainedConfirmModal.candidates.length}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-white border border-amber-200 p-3">
-                    <p className="text-[10px] text-amber-500 font-bold uppercase">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-500">
                       Detained
                     </p>
-                    <p className="text-lg font-black text-amber-700">
+                    <p className="mt-1 text-lg font-black text-amber-700">
                       {detainedConfirmModal.detainedStudents.length}
                     </p>
                   </div>
-                  <div className="rounded-xl bg-white border border-emerald-200 p-3">
-                    <p className="text-[10px] text-emerald-500 font-bold uppercase">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-500">
                       {detainedConfirmModal.action === "cleanup3"
-                        ? "Will Be Cleared"
-                        : "Will Be Promoted"}
+                        ? "Clear"
+                        : "Promote"}
                     </p>
-                    <p className="text-lg font-black text-emerald-700">
+                    <p className="mt-1 text-lg font-black text-emerald-700">
                       {detainedConfirmModal.processableStudents.length}
                     </p>
                   </div>
                 </div>
+
                 {detainedConfirmModal.duplicateCount > 0 && (
-                  <p className="text-[11px] font-semibold text-slate-500">
-                    Duplicate entries ignored:{" "}
-                    {detainedConfirmModal.duplicateCount}
-                  </p>
-                )}
-                <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-black text-slate-700 uppercase tracking-wide mb-3">
-                    Detained Students
-                  </p>
-                  {detainedConfirmModal.detainedStudents.length === 0 ? (
-                    <p className="text-sm font-semibold text-slate-500">
-                      No detained students entered.
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <p className="text-[11px] font-semibold text-slate-600">
+                      Duplicate entries ignored:{" "}
+                      <span className="font-black text-slate-800">
+                        {detainedConfirmModal.duplicateCount}
+                      </span>
                     </p>
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600">
+                      Detained Students
+                    </p>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">
+                      {detainedConfirmModal.detainedStudents.length} kept back
+                    </span>
+                  </div>
+                  {detainedConfirmModal.detainedStudents.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center">
+                      <p className="text-sm font-semibold text-slate-500">
+                        No detained students entered.
+                      </p>
+                    </div>
                   ) : (
                     <div className="space-y-2">
                       {detainedConfirmModal.detainedStudents.map((std) => (
                         <div
                           key={std.id}
-                          className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"
+                          className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50 px-3.5 py-2.5"
                         >
-                          <span className="text-sm font-black text-amber-800">
-                            {std.name}
-                          </span>
-                          <span className="text-[11px] font-bold text-amber-700">
-                            {std.rollNo}
-                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-black text-amber-900">
+                              {std.name}
+                            </p>
+                            <p className="mt-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-600">
+                              Roll No. {std.rollNo}
+                            </p>
+                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
-              <div className="p-6 border-t border-slate-100 flex gap-3 bg-white">
+
+              <div className="flex flex-col-reverse gap-2.5 border-t border-slate-100 bg-white px-4 py-4 sm:flex-row sm:justify-end sm:px-5">
                 <button
                   onClick={closeDetainedFlow}
-                  className="flex-1 px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 sm:w-auto"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={executeDetainedAction}
-                  className={`flex-[2] px-6 py-3 rounded-xl text-sm font-black text-white transition-all hover:scale-[1.02] active:scale-95 ${
+                  className={`w-full rounded-xl px-5 py-2.5 text-sm font-black text-white transition-all hover:scale-[1.01] active:scale-95 sm:w-auto ${
                     detainedConfirmModal.action === "cleanup3"
-                      ? "bg-red-600 shadow-lg shadow-red-200"
-                      : "bg-blue-600 shadow-lg shadow-blue-200"
+                      ? "bg-red-600 shadow-lg shadow-red-200 hover:bg-red-700"
+                      : "bg-blue-600 shadow-lg shadow-blue-200 hover:bg-blue-700"
                   }`}
                 >
                   {detainedConfirmModal.action === "cleanup3"
-                    ? "Clear 3rd Year Batch"
-                    : "Promote Students"}
+                    ? "Confirm 3rd Year Cleanup"
+                    : "Confirm Promotion"}
                 </button>
               </div>
             </Card>
@@ -3315,27 +3585,29 @@ export default function HodDashboard({ user }) {
                     />
                   </div>
 
-                  <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
-                    <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
-                      Department
-                    </label>
-                    <CustomSelect
-                      value={reportDept}
-                      onChange={(val) => {
-                        setReportDept(val);
-                        setReportStaff("");
-                        setReportSubject("");
-                      }}
-                      options={[
-                        { value: "", label: "All Departments" },
-                        ...departmentsList.map((d) => ({
-                          value: d,
-                          label: d,
-                        })),
-                      ]}
-                      placeholder="Select Department"
-                    />
-                  </div>
+                  {user.role === "admin" && (
+                    <div className="w-full sm:w-auto flex-[1] min-w-0 sm:min-w-[180px] relative z-[60]">
+                      <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
+                        Department
+                      </label>
+                      <CustomSelect
+                        value={reportDept}
+                        onChange={(val) => {
+                          setReportDept(val);
+                          setReportStaff("");
+                          setReportSubject("");
+                        }}
+                        options={[
+                          { value: "", label: "All Departments" },
+                          ...departmentsList.map((d) => ({
+                            value: d,
+                            label: d,
+                          })),
+                        ]}
+                        placeholder="Select Department"
+                      />
+                    </div>
+                  )}
                   <div className="w-full sm:w-auto flex-[2] min-w-0 sm:min-w-[200px] relative z-[60]">
                     <label className="text-xs font-semibold text-slate-700 mb-1.5 block uppercase tracking-widest">
                       Faculty
@@ -3345,22 +3617,23 @@ export default function HodDashboard({ user }) {
                       onChange={(val) => {
                         setReportStaff(val);
                         const nextSubjects = [
-                          ...new Set(
-                            [...feedbacks, ...exitForms]
+                          ...new Set([
+                            ...feedbacks
                               .filter((f) => f.staffName === val)
                               .map((f) => f.subject),
-                          ),
-                        ];
+                            ...exitForms
+                              .filter((f) => f.staffName === val)
+                              .map((f) => f.subject),
+                            ...allocations
+                              .filter((a) => a.staff === val)
+                              .map((a) => a.subject),
+                          ]),
+                        ].filter(Boolean);
                         setReportSubject(
                           nextSubjects.length > 0 ? nextSubjects[0] : "",
                         );
                       }}
-                      options={(reportDept
-                        ? allStaffList
-                            .filter((s) => s.dept === reportDept)
-                            .map((s) => s.name)
-                        : allStaffList.map((s) => s.name)
-                      ).map((s) => ({ value: s, label: s }))}
+                      options={reportFacultyOptions}
                       placeholder="All Faculty"
                     />
                   </div>
@@ -3944,8 +4217,8 @@ export default function HodDashboard({ user }) {
               Portal Security Controls
             </h2>
             <p className="text-slate-500 font-medium mb-10 max-w-md mx-auto">
-              Toggle the global student and staff portal states. When closed,
-              the respective users will not be able to log in or submit/view
+              Toggle the student and staff portal states for your department.
+              When closed, the respective users will not be able to submit/view
               feedback.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 sm:justify-center">
@@ -3953,7 +4226,7 @@ export default function HodDashboard({ user }) {
                 onClick={async () => {
                   const s = !isPortalOpen;
                   await setDoc(
-                    doc(db, "Settings", "Global"),
+                    doc(db, "Settings", `Dept_${user.dept}`),
                     { studentPortalOpen: s },
                     { merge: true },
                   );
@@ -3970,7 +4243,7 @@ export default function HodDashboard({ user }) {
                 onClick={async () => {
                   const s = !isStaffPortalOpen;
                   await setDoc(
-                    doc(db, "Settings", "Global"),
+                    doc(db, "Settings", `Dept_${user.dept}`),
                     { staffPortalOpen: s },
                     { merge: true },
                   );

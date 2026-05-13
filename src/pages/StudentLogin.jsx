@@ -1,10 +1,7 @@
 import React, { useState } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
-import emailjs from "@emailjs/browser";
+import { db, auth } from "../firebase";
 import {
-  isValidRollNumber,
-  normalizeRollDigits,
   ROLL_NUMBER_HINT,
 } from "../constants/rollNumber";
 import CustomSelect from "../components/UI/CustomSelect";
@@ -26,17 +23,8 @@ export default function StudentLogin({
   loginView,
   setLoginView,
 }) {
-  const { success, error: notifyError, warning } = useNotify();
-  const [step, setStep] = useState(1);
-  const [rollNo, setRollNo] = useState("");
-  const [enrollNo, setEnrollNo] = useState("");
-  const [otpInput, setOtpInput] = useState("");
+  const { success, error: notifyError } = useNotify();
   const [loading, setLoading] = useState(false);
-  const [studentData, setStudentData] = useState(null);
-  const [validOtps, setValidOtps] = useState([]);
-  const [otpTimestamp, setOtpTimestamp] = useState(null);
-  const [sentRollNo, setSentRollNo] = useState("");
-  const [sentEnrollNo, setSentEnrollNo] = useState("");
 
   const roles = [
     { id: "student", label: "Student Portal" },
@@ -45,45 +33,28 @@ export default function StudentLogin({
     { id: "admin", label: "Admin Portal" },
   ];
 
-  const handleSendOTP = async (e, forceResend = false) => {
-    e?.preventDefault?.();
-    const rollNormalized = normalizeRollDigits(rollNo);
-    const prnNormalized = enrollNo.trim();
-    if (!isValidRollNumber(rollNormalized)) {
-      warning(ROLL_NUMBER_HINT);
-      return;
-    }
-    if (!prnNormalized) {
-      warning("Please enter your Enrollment (PRN) number.");
-      return;
-    }
-
-    if (
-      !forceResend &&
-      validOtps.length > 0 &&
-      rollNormalized === sentRollNo &&
-      prnNormalized === sentEnrollNo
-    ) {
-      if (otpTimestamp && Date.now() - otpTimestamp < 5 * 60 * 1000) {
-        setStep(2);
-        success("OTP is still valid. Continuing to verification.");
-        return;
-      }
-    }
-
+  const handleGoogleLogin = async () => {
     setLoading(true);
-
     try {
+      const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
+      const result = await signInWithPopup(auth, provider);
+      const userEmail = result.user.email;
+
+      // Check if this email exists in our Students collection
       const q = query(
         collection(db, "Students"),
-        where("rollNo", "==", rollNormalized),
+        where("email", "==", userEmail),
       );
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
         notifyError(
-          "Invalid roll number or enrollment number. Check and try again.",
+          `Email ${userEmail} is not registered. Please contact your HOD.`,
         );
+        await auth.signOut(); // Sign them out if unauthorized
         setLoading(false);
         return;
       }
@@ -91,89 +62,25 @@ export default function StudentLogin({
       const studentDoc = querySnapshot.docs[0];
       const student = { id: studentDoc.id, ...studentDoc.data() };
 
-      if (student.enrollmentNo !== enrollNo.trim()) {
-        notifyError(
-          "Enrollment number does not match our records. Check your PRN and try again.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (!student.email) {
-        notifyError(
-          "No email is registered for this profile. Please contact your HOD.",
-        );
-        setLoading(false);
-        return;
-      }
-
-      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setValidOtps((prev) => [...prev, newOtp]);
-      setOtpTimestamp(Date.now());
-      setSentRollNo(rollNormalized);
-      setSentEnrollNo(prnNormalized);
-      setStudentData(student);
-
-      const templateParams = {
-        to_email: student.email,
-        to_name: student.name,
-        otp_code: newOtp,
-      };
-
-      await emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        templateParams,
-        import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
-      );
-
-      setStep(2);
-      const maskedEmail = student.email.replace(
-        /(.{2})(.*)(?=@)/,
-        function (gp1, gp2, gp3) {
-          for (let i = 0; i < gp3.length; i++) {
-            gp2 += "*";
-          }
-          return gp2;
-        },
-      );
-
-      success(`OTP sent to ${maskedEmail}. Check your inbox.`);
-    } catch (error) {
-      console.error("Login Error:", error);
-      notifyError("Something went wrong. Please try again later.");
-    }
-    setLoading(false);
-  };
-
-  const handleVerifyOTP = async (e) => {
-    e.preventDefault();
-    if (!otpInput.trim()) return warning("Please enter the 6-digit OTP.");
-    setLoading(true);
-
-    if (validOtps.includes(otpInput)) {
-      if (otpTimestamp && Date.now() - otpTimestamp > 5 * 60 * 1000) {
-        notifyError(
-          "OTP has expired (Valid for 5 mins). Please request a new one.",
-        );
-        setLoading(false);
-        return;
-      }
-
+      success(`Welcome back, ${student.name}!`);
+      
       onLoginSuccess({
-        id: studentData.id,
-        name: studentData.name,
-        email: studentData.email,
-        rollNo: studentData.rollNo,
-        dept: studentData.department,
-        division: studentData.division,
-        targetClass: studentData.targetClass,
+        id: student.id,
+        name: student.name,
+        email: student.email,
+        rollNo: student.rollNo,
+        dept: student.department,
+        division: student.division,
+        targetClass: student.targetClass || student.tClass,
         role: "student",
       });
-    } else {
-      notifyError("Invalid OTP. Access denied.");
-      setLoading(false);
+    } catch (error) {
+      console.error("Google Login Error:", error);
+      if (error.code !== "auth/popup-closed-by-user" && error.code !== "auth/cancelled-popup-request") {
+        notifyError("Authentication failed. Please try again.");
+      }
     }
+    setLoading(false);
   };
 
   return (
@@ -189,7 +96,7 @@ export default function StudentLogin({
         </h2>
         {loginView !== "" && (
           <p className="max-w-xs sm:max-w-full text-xs sm:text-sm md:text-base font-medium tracking-wide origin-center leading-snug text-slate-500 mt-1">
-            Roll + PRN, then one-time code to your email.
+            Sign in with your official college email.
           </p>
         )}
       </div>
@@ -200,43 +107,33 @@ export default function StudentLogin({
         >
           <div className="relative flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-              {step === 1 ? (
-                loginView === "" ? (
-                  <UserCircle
-                    className="text-white"
-                    size={22}
-                    strokeWidth={2}
-                  />
-                ) : (
-                  <GraduationCap
-                    className="text-white"
-                    size={22}
-                    strokeWidth={2}
-                  />
-                )
+              {loginView === "" ? (
+                <UserCircle
+                  className="text-white"
+                  size={22}
+                  strokeWidth={2}
+                />
               ) : (
-                <Mail className="text-white" size={22} strokeWidth={2} />
+                <GraduationCap
+                  className="text-white"
+                  size={22}
+                  strokeWidth={2}
+                />
               )}
             </div>
             <div className="min-w-0 flex-1">
               {loginView !== "" && (
                 <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-100/95">
                   <Sparkles size={12} className="shrink-0 text-amber-200" />
-                  {step === 1 ? "Step 1" : "Step 2"}
+                  Secure Access
                 </p>
               )}
               <h2 className="font-display truncate text-lg font-extrabold tracking-tight text-white">
-                {step === 1
-                  ? loginView === ""
-                    ? "User sign-in"
-                    : "Student sign-in"
-                  : "Enter OTP"}
+                {loginView === "" ? "User sign-in" : "Student sign-in"}
               </h2>
               {loginView !== "" && (
                 <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-blue-50/95">
-                  {step === 1
-                    ? "We email an OTP after roll & PRN match."
-                    : "6-digit code from your inbox."}
+                  Identity verified by Google
                 </p>
               )}
             </div>
@@ -244,7 +141,7 @@ export default function StudentLogin({
         </div>
 
         <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/90 to-white px-4 py-4 sm:px-5">
-          {step === 1 && loginView === "" && (
+          {loginView === "" && (
             <div className="mb-3">
               <label
                 htmlFor="student-portal-select"
@@ -262,69 +159,36 @@ export default function StudentLogin({
             </div>
           )}
 
-          {step === 1 && loginView !== "" && (
-            <div
-              className="space-y-3"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSendOTP(e);
-              }}
-            >
-              <div>
-                <label
-                  htmlFor="student-roll"
-                  className="mb-1 block text-xs font-semibold text-slate-800"
-                >
-                  Roll no.{" "}
-                  <span className="font-normal text-slate-500">(4 digits)</span>
-                </label>
-                <input
-                  id="student-roll"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="e.g. 1523"
-                  maxLength={4}
-                  value={rollNo}
-                  onChange={(e) =>
-                    setRollNo(normalizeRollDigits(e.target.value))
-                  }
-                  className="input-app py-2 tabular-nums text-sm font-semibold"
-                  required
-                />
-                <p className="mt-1 text-[10px] text-slate-500">
-                  <span className="font-medium text-slate-600">15</span>xx /
-                  <span className="font-medium text-slate-600"> 25</span>xx /
-                  <span className="font-medium text-slate-600"> 35</span>xx —
-                  yrs 1–3
-                </p>
-              </div>
-              <div>
-                <label
-                  htmlFor="student-prn"
-                  className="mb-1 block text-xs font-semibold text-slate-800"
-                >
-                  Enrollment (PRN)
-                </label>
-                <input
-                  id="student-prn"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="PRN on ID card"
-                  value={enrollNo}
-                  onChange={(e) => setEnrollNo(e.target.value)}
-                  className="input-app py-2 tabular-nums text-sm font-semibold"
-                  required
-                />
-              </div>
-
+          {loginView !== "" && (
+            <div className="space-y-4">
               <button
                 type="button"
-                onClick={handleSendOTP}
+                onClick={handleGoogleLogin}
                 disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-indigo-700 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-600/25 transition hover:from-blue-700 hover:to-indigo-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-3 rounded-xl bg-white border border-slate-200 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? "Sending…" : "Send code to email"}
-                {!loading && <ArrowRight size={17} aria-hidden />}
+                {!loading && (
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      fill="#4285F4"
+                    />
+                    <path
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      fill="#34A853"
+                    />
+                    <path
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      fill="#FBBC05"
+                    />
+                    <path
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      fill="#EA4335"
+                    />
+                    <path d="M1 1h22v22H1z" fill="none" />
+                  </svg>
+                )}
+                {loading ? "Signing in..." : "Sign in with Google"}
               </button>
 
               <div className="pt-2 text-center">
@@ -339,68 +203,15 @@ export default function StudentLogin({
             </div>
           )}
 
-          {step === 2 && (
-            <form onSubmit={handleVerifyOTP} className="space-y-3">
-              <div>
-                <label
-                  htmlFor="student-otp"
-                  className="mb-1 block text-xs font-semibold text-slate-800"
-                >
-                  One-time code
-                </label>
-                <input
-                  id="student-otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value)}
-                  className="input-app py-2.5 text-center font-display text-lg font-bold tracking-[0.35em] text-slate-900"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-600 to-teal-700 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-600/20 transition hover:from-emerald-700 hover:to-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? "Signing in…" : "Verify & continue"}
-                {!loading && <CheckCircle size={17} aria-hidden />}
-              </button>
-
-              <div className="flex items-center justify-between gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="w-1/2 py-1 text-center text-xs font-semibold text-slate-600 hover:text-indigo-700 transition"
-                >
-                  ← Back
-                </button>
-                <div className="h-4 w-px bg-slate-200" aria-hidden />
-                <button
-                  type="button"
-                  onClick={(e) => handleSendOTP(e, true)}
-                  disabled={loading}
-                  className="w-1/2 py-1 text-center text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition disabled:opacity-50"
-                >
-                  Resend OTP
-                </button>
-              </div>
-            </form>
-          )}
-
           {loginView !== "" && (
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-[10px] font-semibold text-slate-500">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-[10px] font-semibold text-slate-500">
               <span className="inline-flex items-center gap-1">
                 <Shield className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
                 Secure
               </span>
               <span className="inline-flex items-center gap-1">
-                <Mail className="h-3.5 w-3.5 text-blue-600" aria-hidden />
-                Email OTP
+                <CheckCircle className="h-3.5 w-3.5 text-blue-600" aria-hidden />
+                Identity Verified
               </span>
               <span className="inline-flex items-center gap-1">
                 <Sparkles className="h-3.5 w-3.5 text-violet-600" aria-hidden />
@@ -412,7 +223,7 @@ export default function StudentLogin({
       </div>
 
       <p className="mt-3 text-center text-[10px] leading-snug text-slate-500">
-        Feedback is anonymous; login only verifies your identity.
+        Feedback is completely anonymous; login only verifies identity.
       </p>
     </div>
   );
