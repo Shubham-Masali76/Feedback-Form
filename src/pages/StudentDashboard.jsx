@@ -106,14 +106,16 @@ export default function StudentDashboard({ user }) {
         console.warn("User data incomplete, skipping fetch", {
           email: user?.email,
           targetClass: targetClass,
-          dept: user?.dept
+          dept: user?.dept,
         });
         setLoading(false);
         return;
       }
       try {
         const globalSettingsSnap = await getDoc(doc(db, "Settings", "Global"));
-        const deptSettingsSnap = await getDoc(doc(db, "Settings", `Dept_${user.dept}`));
+        const deptSettingsSnap = await getDoc(
+          doc(db, "Settings", `Dept_${user.dept}`),
+        );
 
         const autoYear = getAutoAcadYear();
         const autoSem = getSemLabel(targetClass || "");
@@ -122,7 +124,9 @@ export default function StudentDashboard({ user }) {
         setCurrentSemester(autoSem);
 
         // Check if student portal is open for this specific department
-        const isStudentPortalOpen = deptSettingsSnap.exists() && deptSettingsSnap.data().studentPortalOpen === true;
+        const isStudentPortalOpen =
+          deptSettingsSnap.exists() &&
+          deptSettingsSnap.data().studentPortalOpen === true;
 
         if (!isStudentPortalOpen) {
           setIsSystemLocked(true);
@@ -132,7 +136,9 @@ export default function StudentDashboard({ user }) {
         setIsSystemLocked(false);
 
         // Fetch Institution Portal Status (remains global)
-        const instOpen = globalSettingsSnap.exists() && globalSettingsSnap.data().institutionPortalOpen === true;
+        const instOpen =
+          globalSettingsSnap.exists() &&
+          globalSettingsSnap.data().institutionPortalOpen === true;
         setIsInstPortalOpen(instOpen);
 
         const q = query(
@@ -183,12 +189,12 @@ export default function StudentDashboard({ user }) {
             const studentSnap = await getDoc(studentDocRef);
             if (studentSnap.exists()) {
               const sData = studentSnap.data();
-              
+
               // Filter tracked submissions by current year and semester
               const filterCurrent = (list) => {
                 if (!Array.isArray(list)) return [];
                 return list
-                  .filter(item => {
+                  .filter((item) => {
                     // Format: "allocId_year_sem"
                     const parts = item.split("_");
                     if (parts.length >= 3) {
@@ -198,12 +204,14 @@ export default function StudentDashboard({ user }) {
                     }
                     return false;
                   })
-                  .map(item => item.split("_")[0]);
+                  .map((item) => item.split("_")[0]);
               };
 
-              studentTrackedStaff = filterCurrent(sData.submittedStaffFeedbacks);
+              studentTrackedStaff = filterCurrent(
+                sData.submittedStaffFeedbacks,
+              );
               studentTrackedExit = filterCurrent(sData.submittedExitSurveys);
-              
+
               if (Array.isArray(sData.submittedInstFeedbacks)) {
                 if (sData.submittedInstFeedbacks.includes(autoYear)) {
                   studentTrackedInst = true;
@@ -219,21 +227,29 @@ export default function StudentDashboard({ user }) {
         const localStaffKey = `staff_fb_${user?.id}_${autoYear}_${autoSem}`;
         const localExitKey = `exit_fb_${user?.id}_${autoYear}_${autoSem}`;
         const localInstKey = `inst_fb_${user?.id}_${autoYear}`;
-        
+
         let localTrackedStaff = [];
         let localTrackedExit = [];
         let localTrackedInst = false;
         try {
-          localTrackedStaff = JSON.parse(localStorage.getItem(localStaffKey) || "[]");
-          localTrackedExit = JSON.parse(localStorage.getItem(localExitKey) || "[]");
+          localTrackedStaff = JSON.parse(
+            localStorage.getItem(localStaffKey) || "[]",
+          );
+          localTrackedExit = JSON.parse(
+            localStorage.getItem(localExitKey) || "[]",
+          );
           localTrackedInst = localStorage.getItem(localInstKey) === "true";
         } catch {
           // Ignore local storage errors
         }
 
         // Combine DB and Local tracking
-        const mergedStaff = Array.from(new Set([...studentTrackedStaff, ...localTrackedStaff]));
-        const mergedExit = Array.from(new Set([...studentTrackedExit, ...localTrackedExit]));
+        const mergedStaff = Array.from(
+          new Set([...studentTrackedStaff, ...localTrackedStaff]),
+        );
+        const mergedExit = Array.from(
+          new Set([...studentTrackedExit, ...localTrackedExit]),
+        );
         const mergedInst = studentTrackedInst || localTrackedInst;
 
         // Check if student already submitted institution feedback for this year
@@ -268,7 +284,7 @@ export default function StudentDashboard({ user }) {
           );
           const staffFeedSnap = await getDocs(staffFeedQ);
           const prevStaffSubmissions = [...mergedStaff];
-          
+
           staffFeedSnap.forEach((d) => {
             const data = d.data();
             // Strictly check both year and semester
@@ -302,7 +318,7 @@ export default function StudentDashboard({ user }) {
           );
           const exitRespTrackerSnap = await getDocs(exitRespTrackerQ);
           const prevExitSubmissions = [...mergedExit];
-          
+
           exitRespTrackerSnap.forEach((d) => {
             const data = d.data();
             if (data.academicYear !== autoYear) return;
@@ -333,7 +349,14 @@ export default function StudentDashboard({ user }) {
     };
 
     fetchSystemStatusAndData();
-  }, [user.dept, user.email, user.targetClass, user.id, user?.tClass, getYearLevel]);
+  }, [
+    user.dept,
+    user.email,
+    user.targetClass,
+    user.id,
+    user?.tClass,
+    getYearLevel,
+  ]);
 
   const handleRatingChange = (questionIndex, value) => {
     setRatings((prev) => ({ ...prev, [questionIndex]: value }));
@@ -410,7 +433,7 @@ export default function StudentDashboard({ user }) {
         try {
           const trackString = `${selectedAllocation}_${currentAcadYear}_${currentSemester}`;
           await updateDoc(doc(db, "Students", user.id), {
-            submittedStaffFeedbacks: arrayUnion(trackString)
+            submittedStaffFeedbacks: arrayUnion(trackString),
           });
         } catch (err) {
           console.warn("Could not update robust tracking:", err);
@@ -421,12 +444,15 @@ export default function StudentDashboard({ user }) {
 
       const newSubmittedReviews = [...submittedReviews, selectedAllocation];
       setSubmittedReviews(newSubmittedReviews);
-      
+
       // Update LocalStorage Fallback
       if (user?.id) {
         try {
           const localStaffKey = `staff_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
-          localStorage.setItem(localStaffKey, JSON.stringify(newSubmittedReviews));
+          localStorage.setItem(
+            localStaffKey,
+            JSON.stringify(newSubmittedReviews),
+          );
         } catch {
           // Ignore
         }
@@ -493,7 +519,7 @@ export default function StudentDashboard({ user }) {
         try {
           const trackString = `${selectedAllocation}_${currentAcadYear}_${currentSemester}`;
           await updateDoc(doc(db, "Students", user.id), {
-            submittedExitSurveys: arrayUnion(trackString)
+            submittedExitSurveys: arrayUnion(trackString),
           });
         } catch (err) {
           console.warn("Could not update robust tracking:", err);
@@ -501,14 +527,20 @@ export default function StudentDashboard({ user }) {
       }
 
       success(`Course Exit Survey for ${targetData.subject} was submitted.`);
-      const newSubmittedExitSurveys = [...submittedExitSurveys, selectedAllocation];
+      const newSubmittedExitSurveys = [
+        ...submittedExitSurveys,
+        selectedAllocation,
+      ];
       setSubmittedExitSurveys(newSubmittedExitSurveys);
-      
+
       // Update LocalStorage Fallback
       if (user?.id) {
         try {
           const localExitKey = `exit_fb_${user.id}_${currentAcadYear}_${currentSemester}`;
-          localStorage.setItem(localExitKey, JSON.stringify(newSubmittedExitSurveys));
+          localStorage.setItem(
+            localExitKey,
+            JSON.stringify(newSubmittedExitSurveys),
+          );
         } catch {
           // Ignore
         }
@@ -569,10 +601,13 @@ export default function StudentDashboard({ user }) {
       if (user?.id) {
         try {
           await updateDoc(doc(db, "Students", user.id), {
-            submittedInstFeedbacks: arrayUnion(currentAcadYear)
+            submittedInstFeedbacks: arrayUnion(currentAcadYear),
           });
         } catch (err) {
-          console.warn("Could not update robust tracking for institution feedback:", err);
+          console.warn(
+            "Could not update robust tracking for institution feedback:",
+            err,
+          );
         }
       }
 
@@ -580,7 +615,7 @@ export default function StudentDashboard({ user }) {
         `Institution Feedback for ${currentAcadYear} submitted successfully.`,
       );
       setHasSubmittedInst(true);
-      
+
       // Update LocalStorage Fallback
       if (user?.id) {
         try {
@@ -792,7 +827,11 @@ export default function StudentDashboard({ user }) {
                           key={alloc.id}
                           onClick={() => {
                             setSelectedAllocation(alloc.id);
-                            if (isCompleted && hasExitForm && !isExitCompleted) {
+                            if (
+                              isCompleted &&
+                              hasExitForm &&
+                              !isExitCompleted
+                            ) {
                               setActiveFormTab("exit");
                             } else {
                               setActiveFormTab("faculty");
@@ -813,7 +852,8 @@ export default function StudentDashboard({ user }) {
                               className={`text-[10px] font-bold uppercase tracking-wider ${
                                 selectedAllocation === alloc.id
                                   ? "text-blue-100/90"
-                                  : isCompleted && (!hasExitForm || isExitCompleted)
+                                  : isCompleted &&
+                                      (!hasExitForm || isExitCompleted)
                                     ? "text-slate-400"
                                     : "text-slate-500"
                               }`}
@@ -841,7 +881,8 @@ export default function StudentDashboard({ user }) {
                             className={`font-display text-base font-bold leading-tight ${
                               selectedAllocation === alloc.id
                                 ? "text-white"
-                                : isCompleted && (!hasExitForm || isExitCompleted)
+                                : isCompleted &&
+                                    (!hasExitForm || isExitCompleted)
                                   ? "text-slate-600"
                                   : "text-slate-900"
                             }`}
@@ -852,7 +893,8 @@ export default function StudentDashboard({ user }) {
                             className={`text-xs font-medium mt-1.5 ${
                               selectedAllocation === alloc.id
                                 ? "text-blue-100/95"
-                                : isCompleted && (!hasExitForm || isExitCompleted)
+                                : isCompleted &&
+                                    (!hasExitForm || isExitCompleted)
                                   ? "text-slate-400"
                                   : "text-slate-500"
                             }`}
